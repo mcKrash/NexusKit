@@ -46,11 +46,11 @@ That's it. Your SaaS is ready.
 
 ```bash
 # Using npx (no install needed)
-npx nexuskit my-app
+npx nexuskit-cli my-app
 
 # Or install globally
-npm install -g nexuskit
-nexuskit my-app
+npm install -g nexuskit-cli
+nexuskit-cli my-app
 ```
 
 ### Interactive wizard
@@ -114,7 +114,7 @@ my-app/
 ## 🔧 CLI Options
 
 ```bash
-nexuskit <project-name> [options]
+nexuskit-cli <project-name> [options]
 
 Options:
   -t, --template <name>   Use a preset template
@@ -150,7 +150,7 @@ Your app runs at `http://localhost:3000` 🎉
 
 ## 🗺️ Roadmap
 
-- [ ] Publish to NPM as `nexuskit`
+- [x] Published to NPM as `nexuskit-cli`
 - [ ] SaaS landing page template
 - [ ] Lemon Squeezy full integration
 - [ ] Supabase Auth template
