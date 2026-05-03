@@ -4,8 +4,8 @@ import LoginForm from "@/components/auth/LoginForm";
 import SocialLogins from "@/components/auth/SocialLogins";
 
 export const metadata: Metadata = {
-  title: "Sign In | {{projectName}}",
-  description: "Sign in to your {{projectName}} account",
+  title: `Sign In | ${process.env.NEXT_PUBLIC_APP_NAME || 'My App'}`,
+  description: `Sign in to your ${process.env.NEXT_PUBLIC_APP_NAME || 'My App'} account`,
 };
 
 export default function LoginPage() {
@@ -15,7 +15,7 @@ export default function LoginPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-block mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">{{projectName}}</h1>
+            <h1 className="text-3xl font-bold text-gray-900">{process.env.NEXT_PUBLIC_APP_NAME || 'My App'}</h1>
           </Link>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
             Welcome back
