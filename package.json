@@ -1,6 +1,6 @@
 {
   "name": "nexuskit-cli",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Generate production-ready SaaS applications with authentication, payments, and more",
   "main": "src/cli.js",
   "bin": {
