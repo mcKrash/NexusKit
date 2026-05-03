@@ -1,11 +1,11 @@
 {
   "name": "nexuskit-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Generate production-ready SaaS applications with authentication, payments, and more",
   "main": "src/cli.js",
   "bin": {
     "nexuskit": "./bin/create-saas-app.js"
-},
+  },
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
