@@ -1,0 +1,595 @@
+# Security Documentation
+
+## Overview
+
+This application includes comprehensive security measures to protect against common web vulnerabilities and attacks. This document outlines the security features implemented, configuration options, and best practices.
+
+## Security Features
+
+### 1. Rate Limiting
+
+Rate limiting prevents abuse by restricting the number of requests from a single source within a time window.
+
+**Features:**
+- IP-based tracking
+- User-based tracking for authenticated requests
+- Redis support for distributed rate limiting
+- In-memory fallback when Redis is unavailable
+- Different limits per endpoint type
+- Dynamic rate limiting based on user tier
+
+**Predefined Configurations:**
+
+```typescript
+// Authentication endpoints (strict)
+rateLimitConfigs.auth
+// - 5 requests per 15 minutes
+// - Use for: login, signup, password reset
+
+// API endpoints (standard)
+rateLimitConfigs.api
+// - 100 requests per hour
+// - Use for: general API endpoints
+
+// Standard endpoints
+rateLimitConfigs.standard
+// - 100 requests per 15 minutes
+// - Use for: most application endpoints
+```
+
+**Usage:**
+
+```typescript
+import { rateLimit, createRateLimiter } from './middleware/rate-limit';
+
+// Use predefined configuration
+app.post('/api/auth/login', createRateLimiter('auth'), loginHandler);
+
+// Custom configuration
+app.use('/api', rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  maxRequests: 1000,
+  message: 'Too many requests',
+}));
+
+// Dynamic rate limiting based on user tier
+import { dynamicRateLimit } from './middleware/rate-limit';
+app.use('/api', dynamicRateLimit(rateLimitConfigs.api));
+```
+
+**Configuration:**
+
+```bash
+# .env
+REDIS_URL=redis://localhost:6379
+```
+
+### 2. CORS (Cross-Origin Resource Sharing)
+
+CORS middleware controls which origins can access your API and what operations they can perform.
+
+**Features:**
+- Configurable allowed origins
+- Support for wildcard patterns
+- Environment-based configuration
+- Credentials support
+- Preflight request handling
+- Custom origin validators
+
+**Usage:**
+
+```typescript
+import { cors, strictCors, apiCors } from './middleware/cors';
+
+// Environment-based CORS
+import { environmentCors } from './middleware/cors';
+app.use(environmentCors());
+
+// Strict CORS for production
+app.use(strictCors(['https://yourdomain.com']));
+
+// API-specific CORS
+app.use('/api', apiCors(['https://app.yourdomain.com']));
+
+// Custom configuration
+app.use(cors({
+  origin: ['https://yourdomain.com', 'https://app.yourdomain.com'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+}));
+```
+
+**Configuration:**
+
+```bash
+# .env
+NODE_ENV=production
+ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+```
+
+### 3. Security Headers
+
+Security headers protect against common attacks like XSS, clickjacking, and MIME sniffing.
+
+**Headers Implemented:**
+- `Strict-Transport-Security` (HSTS) - Forces HTTPS
+- `Content-Security-Policy` (CSP) - Prevents XSS attacks
+- `X-Frame-Options` - Prevents clickjacking
+- `X-Content-Type-Options` - Prevents MIME sniffing
+- `X-XSS-Protection` - Browser XSS protection
+- `Referrer-Policy` - Controls referrer information
+- `Permissions-Policy` - Controls browser features
+- `Cross-Origin-*-Policy` - Isolation policies
+
+**Usage:**
+
+```typescript
+import {
+  securityHeaders,
+  strictSecurityHeaders,
+  apiSecurityHeaders
+} from './middleware/security-headers';
+
+// Environment-based headers
+import { environmentSecurityHeaders } from './middleware/security-headers';
+app.use(environmentSecurityHeaders());
+
+// Strict headers for production
+app.use(strictSecurityHeaders());
+
+// Custom configuration
+app.use(securityHeaders({
+  csp: {
+    directives: {
+      'default-src': ["'self'"],
+      'script-src': ["'self'", 'https://cdn.jsdelivr.net'],
+      'style-src': ["'self'", "'unsafe-inline'"],
+    },
+  },
+}));
+```
+
+**CSP Configuration Examples:**
+
+```typescript
+import { mergeCSPDirectives, cspDirectives } from './middleware/security-headers';
+
+// For pages with payment forms
+const paymentCSP = mergeCSPDirectives(
+  cspDirectives.payment,
+  { 'default-src': ["'self'"] }
+);
+
+// For pages with analytics
+const analyticsCSP = mergeCSPDirectives(
+  cspDirectives.analytics,
+  { 'default-src': ["'self'"] }
+);
+```
+
+### 4. Input Validation & Sanitization
+
+Comprehensive input validation using Zod schemas and sanitization functions.
+
+**Features:**
+- Email validation
+- Password strength validation
+- Username validation
+- URL validation
+- Phone number validation
+- HTML sanitization
+- SQL injection prevention
+
+**Usage:**
+
+```typescript
+import {
+  emailSchema,
+  passwordSchema,
+  signUpSchema,
+  sanitizeHtml,
+  validateData
+} from './lib/validations';
+
+// Validate signup data
+const result = await validateData(signUpSchema, req.body);
+if (!result.success) {
+  return res.status(400).json({
+    error: 'Validation failed',
+    errors: formatZodErrors(result.errors),
+  });
+}
+
+// Sanitize HTML content
+const safeHtml = sanitizeHtml(userInput);
+
+// Password strength check
+import { calculatePasswordStrength } from './lib/validations';
+const strength = calculatePasswordStrength(password); // 0-4
+```
+
+**Available Schemas:**
+- `emailSchema` - Email validation
+- `passwordSchema` - Password with strength requirements
+- `strongPasswordSchema` - Stricter password requirements
+- `usernameSchema` - Username validation
+- `nameSchema` - Name validation
+- `urlSchema` - URL validation
+- `phoneSchema` - Phone number validation
+- `signUpSchema` - User registration
+- `signInSchema` - User login
+- `updateProfileSchema` - Profile updates
+- `paginationSchema` - Pagination parameters
+
+### 5. CSRF Protection
+
+CSRF (Cross-Site Request Forgery) protection prevents unauthorized commands from being transmitted from a user that the web application trusts.
+
+**Features:**
+- Token-based CSRF protection
+- Redis support for distributed systems
+- Session-based token storage
+- Double submit cookie pattern
+- Automatic token generation
+- Form integration helpers
+
+**Usage:**
+
+```typescript
+import { csrf, csrfToken, doubleCsrf } from './lib/csrf';
+
+// Apply CSRF protection
+app.use(csrfToken()); // Generate tokens
+app.use(csrf());      // Validate tokens
+
+// Exclude certain paths
+app.use(csrf({
+  excludePaths: ['/api/webhooks/*', '/health'],
+}));
+
+// Use in templates (EJS example)
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="<%= csrfToken %>">
+  <!-- form fields -->
+</form>
+
+// Client-side (fetch)
+fetch('/api/endpoint', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': getCookie('csrf-token'),
+  },
+  body: JSON.stringify(data),
+});
+
+// Regenerate token after login
+import { regenerateCsrfToken } from './lib/csrf';
+await regenerateCsrfToken(req, res);
+```
+
+**Configuration:**
+
+```bash
+# .env
+REDIS_URL=redis://localhost:6379
+```
+
+### 6. API Key Authentication
+
+Secure API key management for public API access.
+
+**Features:**
+- Secure API key generation
+- Hashed storage
+- Scope-based permissions
+- Rate limiting per API key
+- Expiration support
+- Usage tracking
+- Redis caching
+
+**Usage:**
+
+```typescript
+import {
+  apiKeyAuth,
+  requireScope,
+  generateApiKey
+} from './middleware/api-key';
+
+// Protect API endpoints
+app.use('/api/public', apiKeyAuth());
+
+// Require specific scope
+app.get('/api/users',
+  apiKeyAuth(),
+  requireScope('users:read'),
+  getUsersHandler
+);
+
+// Generate new API key
+const newKey = generateApiKey('sk'); // sk_...
+const hashedKey = hashApiKey(newKey);
+// Store hashedKey in database
+
+// Optional authentication (allows both authenticated and unauthenticated)
+import { optionalApiKeyAuth } from './middleware/api-key';
+app.get('/api/data', optionalApiKeyAuth(), dataHandler);
+```
+
+**API Key Format:**
+```
+{prefix}_{random_string}
+Example: sk_abc123def456ghi789jkl012mno345pqr678stu
+```
+
+**Scopes:**
+- `users:read` - Read user data
+- `users:write` - Create/update users
+- `posts:*` - All post operations
+- `*` - Full access
+
+## Best Practices
+
+### 1. Environment Variables
+
+**Never commit sensitive data to version control:**
+
+```bash
+# .env (add to .gitignore)
+NODE_ENV=production
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+SESSION_SECRET=your-secret-key
+JWT_SECRET=your-jwt-secret
+ALLOWED_ORIGINS=https://yourdomain.com
+```
+
+### 2. Password Security
+
+**Requirements:**
+- Minimum 8 characters (12+ recommended)
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one number
+- At least one special character
+- Not in common password list
+
+**Storage:**
+- Always hash passwords with bcrypt (cost factor 12+)
+- Never store plain text passwords
+- Use salt rounds: 12-14 for production
+
+```typescript
+import bcrypt from 'bcryptjs';
+
+const hashedPassword = await bcrypt.hash(password, 12);
+const isValid = await bcrypt.compare(password, hashedPassword);
+```
+
+### 3. Session Management
+
+**Best Practices:**
+- Use secure session storage (Redis recommended)
+- Set appropriate session timeouts
+- Regenerate session ID after login
+- Clear session data on logout
+- Use secure cookies in production
+
+```typescript
+import session from 'express-session';
+import RedisStore from 'connect-redis';
+import { Redis } from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL);
+
+app.use(session({
+  store: new RedisStore({ client: redis }),
+  secret: process.env.SESSION_SECRET!,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'strict',
+  },
+}));
+```
+
+### 4. HTTPS
+
+**Always use HTTPS in production:**
+
+```typescript
+// Redirect HTTP to HTTPS
+app.use((req, res, next) => {
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    return next();
+  }
+  res.redirect('https://' + req.headers.host + req.url);
+});
+```
+
+### 5. Error Handling
+
+**Don't leak sensitive information in error messages:**
+
+```typescript
+// Bad
+res.status(500).json({ error: error.stack });
+
+// Good
+res.status(500).json({
+  error: 'Internal Server Error',
+  message: 'An unexpected error occurred.'
+});
+
+// Log detailed errors server-side
+console.error('Detailed error:', error);
+```
+
+### 6. Database Security
+
+**Use parameterized queries:**
+
+```typescript
+// Bad (vulnerable to SQL injection)
+db.query(`SELECT * FROM users WHERE id = ${userId}`);
+
+// Good
+db.query('SELECT * FROM users WHERE id = $1', [userId]);
+```
+
+### 7. File Uploads
+
+**Validate file uploads:**
+
+```typescript
+import { validateFileUpload } from './lib/validations';
+
+const validation = validateFileUpload(file, {
+  maxSize: 5 * 1024 * 1024, // 5MB
+  allowedTypes: ['image/jpeg', 'image/png'],
+  allowedExtensions: ['.jpg', '.png'],
+});
+
+if (!validation.valid) {
+  return res.status(400).json({ error: validation.error });
+}
+```
+
+### 8. Logging
+
+**Log security events:**
+
+```typescript
+// Authentication attempts
+logger.info('Login attempt', { email, ip: req.ip });
+
+// Failed authentication
+logger.warn('Failed login', { email, ip: req.ip });
+
+// API key usage
+logger.info('API key used', { keyId, endpoint: req.path });
+
+// Rate limit exceeded
+logger.warn('Rate limit exceeded', { ip: req.ip });
+```
+
+### 9. Regular Updates
+
+- Keep dependencies up to date
+- Monitor security advisories
+- Run security audits regularly:
+
+```bash
+npm audit
+npm audit fix
+```
+
+### 10. Security Testing
+
+**Recommended tools:**
+- OWASP ZAP - Automated security testing
+- Burp Suite - Manual security testing
+- npm audit - Dependency vulnerabilities
+- Snyk - Continuous security monitoring
+
+## Common Vulnerabilities Prevented
+
+### ✅ SQL Injection
+- Use parameterized queries
+- Validate and sanitize inputs
+- Use ORM with proper escaping
+
+### ✅ XSS (Cross-Site Scripting)
+- Content Security Policy headers
+- HTML sanitization
+- Output encoding
+- X-XSS-Protection header
+
+### ✅ CSRF (Cross-Site Request Forgery)
+- CSRF token validation
+- SameSite cookie attribute
+- Origin header validation
+
+### ✅ Clickjacking
+- X-Frame-Options header
+- CSP frame-ancestors directive
+
+### ✅ Brute Force Attacks
+- Rate limiting on authentication endpoints
+- Account lockout mechanisms
+- CAPTCHA for repeated failures
+
+### ✅ Man-in-the-Middle
+- HTTPS/TLS encryption
+- HSTS header
+- Secure cookies
+
+### ✅ Session Hijacking
+- Secure session storage
+- HttpOnly cookies
+- Session regeneration
+- Secure flag on cookies
+
+### ✅ Injection Attacks
+- Input validation
+- Parameterized queries
+- Content type validation
+
+## Security Checklist
+
+**Before deploying to production:**
+
+- [ ] Enable HTTPS/TLS
+- [ ] Set NODE_ENV=production
+- [ ] Configure CORS with specific origins
+- [ ] Enable strict security headers
+- [ ] Use strong session secrets
+- [ ] Enable rate limiting
+- [ ] Configure CSRF protection
+- [ ] Implement proper authentication
+- [ ] Hash all passwords
+- [ ] Validate all inputs
+- [ ] Sanitize all outputs
+- [ ] Enable security logging
+- [ ] Set up monitoring and alerts
+- [ ] Configure database security
+- [ ] Review and test error handling
+- [ ] Update all dependencies
+- [ ] Run security audit
+- [ ] Test with security tools
+- [ ] Review API key permissions
+- [ ] Configure backups
+- [ ] Document security procedures
+
+## Support and Resources
+
+**OWASP Resources:**
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/)
+- [OWASP Testing Guide](https://owasp.org/www-project-web-security-testing-guide/)
+
+**Security Headers:**
+- [Security Headers](https://securityheaders.com/) - Test your headers
+- [CSP Evaluator](https://csp-evaluator.withgoogle.com/) - Test CSP policies
+
+**Additional Resources:**
+- [Node.js Security Best Practices](https://nodejs.org/en/docs/guides/security/)
+- [Express Security Best Practices](https://expressjs.com/en/advanced/best-practice-security.html)
+
+## Reporting Security Issues
+
+If you discover a security vulnerability, please email security@yourdomain.com. Do not create public issues for security vulnerabilities.
+
+**Include in your report:**
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Suggested fix (if any)
+
+## License
+
+This security implementation follows industry best practices and standards. Please ensure you comply with all applicable laws and regulations in your jurisdiction.

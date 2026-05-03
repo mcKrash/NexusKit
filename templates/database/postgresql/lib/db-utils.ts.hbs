@@ -1,0 +1,247 @@
+import { prisma } from './db';
+import type { PricingPlan, SubscriptionStatus } from '@prisma/client';
+
+/**
+ * Get user with active subscription
+ */
+export async function getUserWithSubscription(userId: string) {
+  return await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      subscriptions: {
+        where: {
+          status: {
+            in: ['ACTIVE', 'TRIALING', 'PAST_DUE'],
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
+  });
+}
+
+/**
+ * Get user by email with subscriptions
+ */
+export async function getUserByEmail(email: string) {
+  return await prisma.user.findUnique({
+    where: { email },
+    include: {
+      subscriptions: {
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  });
+}
+
+/**
+ * Get user's current plan
+ */
+export async function getUserPlan(userId: string): Promise<PricingPlan> {
+  const subscription = await prisma.subscription.findFirst({
+    where: {
+      userId,
+      status: {
+        in: ['ACTIVE', 'TRIALING', 'PAST_DUE'],
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return subscription?.plan || 'FREE';
+}
+
+/**
+ * Check if user has active subscription
+ */
+export async function hasActiveSubscription(userId: string): Promise<boolean> {
+  const subscription = await prisma.subscription.findFirst({
+    where: {
+      userId,
+      status: {
+        in: ['ACTIVE', 'TRIALING'],
+      },
+    },
+  });
+
+  return !!subscription;
+}
+
+/**
+ * Update subscription status
+ */
+export async function updateSubscriptionStatus(
+  stripeSubscriptionId: string,
+  status: SubscriptionStatus,
+  cancelAtPeriodEnd?: boolean
+) {
+  return await prisma.subscription.update({
+    where: { stripeSubscriptionId },
+    data: {
+      status,
+      ...(cancelAtPeriodEnd !== undefined && { cancelAtPeriodEnd }),
+      ...(status === 'CANCELED' && { canceledAt: new Date() }),
+    },
+  });
+}
+
+/**
+ * Create or update subscription
+ */
+export async function upsertSubscription(data: {
+  userId: string;
+  stripeSubscriptionId: string;
+  status: SubscriptionStatus;
+  plan: PricingPlan;
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;
+}) {
+  return await prisma.subscription.upsert({
+    where: { stripeSubscriptionId: data.stripeSubscriptionId },
+    create: data,
+    update: {
+      status: data.status,
+      plan: data.plan,
+      currentPeriodStart: data.currentPeriodStart,
+      currentPeriodEnd: data.currentPeriodEnd,
+    },
+  });
+}
+
+/**
+ * Record a payment
+ */
+export async function recordPayment(data: {
+  userId: string;
+  amount: number;
+  currency?: string;
+  status: 'SUCCEEDED' | 'FAILED';
+  stripeInvoiceId?: string;
+  description?: string;
+}) {
+  return await prisma.payment.create({
+    data: {
+      ...data,
+      currency: data.currency || 'usd',
+      paidAt: data.status === 'SUCCEEDED' ? new Date() : null,
+    },
+  });
+}
+
+/**
+ * Get user's payment history
+ */
+export async function getUserPayments(userId: string, limit = 10) {
+  return await prisma.payment.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+}
+
+/**
+ * Get subscription by Stripe ID
+ */
+export async function getSubscriptionByStripeId(stripeSubscriptionId: string) {
+  return await prisma.subscription.findUnique({
+    where: { stripeSubscriptionId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      },
+    },
+  });
+}
+
+/**
+ * Cancel subscription at period end
+ */
+export async function cancelSubscriptionAtPeriodEnd(
+  stripeSubscriptionId: string
+) {
+  return await prisma.subscription.update({
+    where: { stripeSubscriptionId },
+    data: {
+      cancelAtPeriodEnd: true,
+    },
+  });
+}
+
+/**
+ * Reactivate canceled subscription
+ */
+export async function reactivateSubscription(stripeSubscriptionId: string) {
+  return await prisma.subscription.update({
+    where: { stripeSubscriptionId },
+    data: {
+      cancelAtPeriodEnd: false,
+      canceledAt: null,
+    },
+  });
+}
+
+/**
+ * Update user's Stripe customer ID
+ */
+export async function updateUserStripeCustomerId(
+  userId: string,
+  stripeCustomerId: string
+) {
+  return await prisma.user.update({
+    where: { id: userId },
+    data: { stripeCustomerId },
+  });
+}
+
+/**
+ * Get user by Stripe customer ID
+ */
+export async function getUserByStripeCustomerId(stripeCustomerId: string) {
+  return await prisma.user.findUnique({
+    where: { stripeCustomerId },
+    include: {
+      subscriptions: {
+        where: {
+          status: {
+            in: ['ACTIVE', 'TRIALING', 'PAST_DUE'],
+          },
+        },
+      },
+    },
+  });
+}
+
+/**
+ * Clean up expired sessions (run periodically)
+ */
+export async function cleanupExpiredSessions() {
+  const result = await prisma.session.deleteMany({
+    where: {
+      expires: {
+        lt: new Date(),
+      },
+    },
+  });
+
+  return result.count;
+}
+
+/**
+ * Clean up expired verification tokens (run periodically)
+ */
+export async function cleanupExpiredTokens() {
+  const result = await prisma.verificationToken.deleteMany({
+    where: {
+      expires: {
+        lt: new Date(),
+      },
+    },
+  });
+
+  return result.count;
+}

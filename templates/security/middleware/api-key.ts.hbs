@@ -1,0 +1,427 @@
+import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
+import { Redis } from 'ioredis';
+
+// API key configuration interface
+export interface ApiKeyConfig {
+  headerName?: string;
+  queryParamName?: string;
+  redis?: Redis;
+  cacheTTL?: number; // Time to cache API keys in memory
+  allowQueryParam?: boolean; // Whether to allow API key in query params (less secure)
+  customValidator?: (apiKey: string, req: Request) => Promise<ApiKeyData | null>;
+}
+
+// API key data interface
+export interface ApiKeyData {
+  id: string;
+  key: string;
+  userId?: string;
+  name?: string;
+  scopes?: string[];
+  rateLimit?: {
+    maxRequests: number;
+    windowMs: number;
+  };
+  expiresAt?: Date;
+  lastUsedAt?: Date;
+  createdAt: Date;
+  isActive: boolean;
+}
+
+// Default configuration
+const defaultConfig: Required<Omit<ApiKeyConfig, 'redis' | 'customValidator'>> = {
+  headerName: 'x-api-key',
+  queryParamName: 'api_key',
+  cacheTTL: 5 * 60 * 1000, // 5 minutes
+  allowQueryParam: false,
+};
+
+// In-memory cache for API keys
+interface CachedApiKey {
+  data: ApiKeyData;
+  cachedAt: number;
+}
+
+const apiKeyCache = new Map<string, CachedApiKey>();
+
+// Clean up expired cache entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of apiKeyCache.entries()) {
+    if (now - value.cachedAt > defaultConfig.cacheTTL) {
+      apiKeyCache.delete(key);
+    }
+  }
+}, 10 * 60 * 1000);
+
+/**
+ * Generate a secure API key
+ * Format: prefix_randomstring
+ */
+export function generateApiKey(prefix: string = 'sk'): string {
+  const randomPart = crypto.randomBytes(32).toString('base64url');
+  return `${prefix}_${randomPart}`;
+}
+
+/**
+ * Hash API key for secure storage
+ */
+export function hashApiKey(apiKey: string): string {
+  return crypto.createHash('sha256').update(apiKey).digest('hex');
+}
+
+/**
+ * Get API key from request
+ */
+function getApiKeyFromRequest(req: Request, config: ApiKeyConfig): string | null {
+  const options = { ...defaultConfig, ...config };
+
+  // Try to get from header (preferred)
+  const headerKey = req.headers[options.headerName.toLowerCase()] as string;
+  if (headerKey) {
+    // Support "Bearer token" format
+    if (headerKey.startsWith('Bearer ')) {
+      return headerKey.slice(7);
+    }
+    return headerKey;
+  }
+
+  // Try to get from query param (if allowed)
+  if (options.allowQueryParam) {
+    const queryKey = req.query[options.queryParamName] as string;
+    if (queryKey) {
+      return queryKey;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Validate API key format
+ */
+function isValidApiKeyFormat(apiKey: string): boolean {
+  // Check if key follows the format: prefix_base64url
+  const pattern = /^[a-z]{2,4}_[A-Za-z0-9_-]{40,}$/;
+  return pattern.test(apiKey);
+}
+
+/**
+ * Get API key data from cache
+ */
+function getCachedApiKey(apiKey: string, cacheTTL: number): ApiKeyData | null {
+  const cached = apiKeyCache.get(apiKey);
+  if (!cached) return null;
+
+  const now = Date.now();
+  if (now - cached.cachedAt > cacheTTL) {
+    apiKeyCache.delete(apiKey);
+    return null;
+  }
+
+  return cached.data;
+}
+
+/**
+ * Cache API key data
+ */
+function cacheApiKey(apiKey: string, data: ApiKeyData): void {
+  apiKeyCache.set(apiKey, {
+    data,
+    cachedAt: Date.now(),
+  });
+}
+
+/**
+ * Validate API key against database
+ * This is a placeholder - you should implement your own database logic
+ */
+async function validateApiKeyFromDB(apiKey: string): Promise<ApiKeyData | null> {
+  // TODO: Implement database lookup
+  // Example:
+  // const hashedKey = hashApiKey(apiKey);
+  // const result = await db.apiKeys.findOne({ key: hashedKey });
+  // return result;
+
+  console.warn('API key validation not implemented. Please implement validateApiKeyFromDB()');
+  return null;
+}
+
+/**
+ * Validate API key from Redis cache
+ */
+async function validateApiKeyFromRedis(
+  apiKey: string,
+  redis: Redis
+): Promise<ApiKeyData | null> {
+  try {
+    const key = `apikey:${hashApiKey(apiKey)}`;
+    const data = await redis.get(key);
+
+    if (!data) return null;
+
+    return JSON.parse(data) as ApiKeyData;
+  } catch (error) {
+    console.error('Redis API key validation error:', error);
+    return null;
+  }
+}
+
+/**
+ * Update API key last used timestamp
+ */
+async function updateLastUsed(apiKey: string, redis?: Redis): Promise<void> {
+  try {
+    if (redis) {
+      const key = `apikey:${hashApiKey(apiKey)}`;
+      await redis.hset(key, 'lastUsedAt', new Date().toISOString());
+    }
+
+    // TODO: Also update in database
+    // await db.apiKeys.update({ key: hashApiKey(apiKey) }, { lastUsedAt: new Date() });
+  } catch (error) {
+    console.error('Failed to update API key last used:', error);
+  }
+}
+
+/**
+ * Check if API key has required scope
+ */
+function hasScope(apiKeyData: ApiKeyData, requiredScope: string): boolean {
+  if (!apiKeyData.scopes || apiKeyData.scopes.length === 0) {
+    // No scopes defined means full access
+    return true;
+  }
+
+  // Check for wildcard scope
+  if (apiKeyData.scopes.includes('*')) {
+    return true;
+  }
+
+  // Check for exact scope match
+  if (apiKeyData.scopes.includes(requiredScope)) {
+    return true;
+  }
+
+  // Check for wildcard pattern (e.g., "users:*" matches "users:read")
+  return apiKeyData.scopes.some(scope => {
+    if (scope.endsWith(':*')) {
+      const prefix = scope.slice(0, -2);
+      return requiredScope.startsWith(prefix + ':');
+    }
+    return false;
+  });
+}
+
+/**
+ * API key authentication middleware
+ */
+export function apiKeyAuth(config: ApiKeyConfig = {}) {
+  const options = { ...defaultConfig, ...config };
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Get API key from request
+      const apiKey = getApiKeyFromRequest(req, options);
+
+      if (!apiKey) {
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'API key is required. Please provide it in the X-API-Key header.',
+        });
+      }
+
+      // Validate API key format
+      if (!isValidApiKeyFormat(apiKey)) {
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'Invalid API key format.',
+        });
+      }
+
+      // Try to get from cache first
+      let apiKeyData = getCachedApiKey(apiKey, options.cacheTTL);
+
+      if (!apiKeyData) {
+        // Use custom validator if provided
+        if (options.customValidator) {
+          apiKeyData = await options.customValidator(apiKey, req);
+        }
+        // Try Redis
+        else if (options.redis) {
+          apiKeyData = await validateApiKeyFromRedis(apiKey, options.redis);
+        }
+        // Fallback to database
+        else {
+          apiKeyData = await validateApiKeyFromDB(apiKey);
+        }
+
+        if (!apiKeyData) {
+          return res.status(401).json({
+            error: 'Unauthorized',
+            message: 'Invalid API key.',
+          });
+        }
+
+        // Cache the API key data
+        cacheApiKey(apiKey, apiKeyData);
+      }
+
+      // Check if API key is active
+      if (!apiKeyData.isActive) {
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'API key has been revoked.',
+        });
+      }
+
+      // Check if API key has expired
+      if (apiKeyData.expiresAt && new Date(apiKeyData.expiresAt) < new Date()) {
+        return res.status(401).json({
+          error: 'Unauthorized',
+          message: 'API key has expired.',
+        });
+      }
+
+      // Attach API key data to request
+      (req as any).apiKey = apiKeyData;
+      (req as any).apiKeyValue = apiKey;
+
+      // Update last used timestamp (async, don't wait)
+      updateLastUsed(apiKey, options.redis).catch(console.error);
+
+      next();
+    } catch (error) {
+      console.error('API key authentication error:', error);
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'Failed to authenticate API key.',
+      });
+    }
+  };
+}
+
+/**
+ * Require specific scope middleware
+ */
+export function requireScope(scope: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const apiKeyData = (req as any).apiKey as ApiKeyData | undefined;
+
+    if (!apiKeyData) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'API key is required.',
+      });
+    }
+
+    if (!hasScope(apiKeyData, scope)) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: `Insufficient permissions. Required scope: ${scope}`,
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Require any of the specified scopes
+ */
+export function requireAnyScope(...scopes: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const apiKeyData = (req as any).apiKey as ApiKeyData | undefined;
+
+    if (!apiKeyData) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'API key is required.',
+      });
+    }
+
+    const hasAnyScope = scopes.some(scope => hasScope(apiKeyData, scope));
+
+    if (!hasAnyScope) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: `Insufficient permissions. Required one of: ${scopes.join(', ')}`,
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Optional API key authentication (allows both authenticated and unauthenticated access)
+ */
+export function optionalApiKeyAuth(config: ApiKeyConfig = {}) {
+  const options = { ...defaultConfig, ...config };
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const apiKey = getApiKeyFromRequest(req, options);
+
+    if (!apiKey) {
+      // No API key provided, continue as unauthenticated
+      return next();
+    }
+
+    // API key provided, validate it
+    return apiKeyAuth(config)(req, res, next);
+  };
+}
+
+/**
+ * Rate limit based on API key
+ */
+export function apiKeyRateLimit(redis?: Redis) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const apiKeyData = (req as any).apiKey as ApiKeyData | undefined;
+
+    if (!apiKeyData || !apiKeyData.rateLimit) {
+      return next();
+    }
+
+    const { maxRequests, windowMs } = apiKeyData.rateLimit;
+    const key = `ratelimit:apikey:${apiKeyData.id}`;
+
+    try {
+      if (redis) {
+        const now = Date.now();
+        const windowStart = now - windowMs;
+
+        const multi = redis.multi();
+        multi.zremrangebyscore(key, 0, windowStart);
+        multi.zadd(key, now, `${now}-${Math.random()}`);
+        multi.zcard(key);
+        multi.expire(key, Math.ceil(windowMs / 1000));
+
+        const results = await multi.exec();
+        if (!results) throw new Error('Redis transaction failed');
+
+        const count = results[2][1] as number;
+
+        res.setHeader('X-RateLimit-Limit', maxRequests.toString());
+        res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - count).toString());
+        res.setHeader('X-RateLimit-Reset', new Date(now + windowMs).toISOString());
+
+        if (count > maxRequests) {
+          return res.status(429).json({
+            error: 'Too Many Requests',
+            message: 'API key rate limit exceeded.',
+          });
+        }
+      }
+
+      next();
+    } catch (error) {
+      console.error('API key rate limit error:', error);
+      // On error, allow the request
+      next();
+    }
+  };
+}
+
+export default apiKeyAuth;

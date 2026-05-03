@@ -1,0 +1,342 @@
+/**
+ * Security Configuration
+ * Centralized security settings for the application
+ */
+
+import { CorsConfig } from '../middleware/cors';
+import { SecurityHeadersConfig } from '../middleware/security-headers';
+import { CsrfConfig } from '../lib/csrf';
+import { ApiKeyConfig } from '../middleware/api-key';
+
+// Environment variables
+const isProd = process.env.NODE_ENV === 'production';
+const isDev = process.env.NODE_ENV === 'development';
+
+/**
+ * CORS Configuration
+ */
+export const corsConfig: CorsConfig = {
+  origin: isProd
+    ? (process.env.ALLOWED_ORIGINS?.split(',') || [])
+    : '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'X-CSRF-Token',
+    'X-API-Key',
+  ],
+  exposedHeaders: [
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset',
+    'X-Total-Count',
+  ],
+  credentials: true,
+  maxAge: 86400, // 24 hours
+};
+
+/**
+ * Security Headers Configuration
+ */
+export const securityHeadersConfig: SecurityHeadersConfig = {
+  hsts: {
+    enabled: isProd,
+    maxAge: isProd ? 31536000 : 0, // 1 year in production
+    includeSubDomains: true,
+    preload: isProd,
+  },
+  csp: {
+    enabled: true,
+    directives: isProd ? {
+      'default-src': ["'self'"],
+      'script-src': ["'self'"],
+      'style-src': ["'self'", "'unsafe-inline'"], // Consider using nonces in production
+      'img-src': ["'self'", 'data:', 'https:'],
+      'font-src': ["'self'", 'data:'],
+      'connect-src': ["'self'"],
+      'frame-ancestors': ["'none'"],
+      'base-uri': ["'self'"],
+      'form-action': ["'self'"],
+      'upgrade-insecure-requests': [],
+    } : {
+      'default-src': ["'self'"],
+      'script-src': ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Relaxed for development
+      'style-src': ["'self'", "'unsafe-inline'"],
+      'img-src': ["'self'", 'data:', 'https:', 'http:'],
+      'font-src': ["'self'", 'data:'],
+      'connect-src': ["'self'", 'ws:', 'wss:'],
+    },
+    reportOnly: isDev,
+    reportUri: process.env.CSP_REPORT_URI,
+  },
+  frameOptions: 'DENY',
+  noSniff: true,
+  xssProtection: '1; mode=block',
+  referrerPolicy: isProd ? 'no-referrer' : 'strict-origin-when-cross-origin',
+  permissionsPolicy: {
+    camera: [],
+    microphone: [],
+    geolocation: [],
+    payment: isProd ? [] : ['self'],
+  },
+  crossOriginEmbedderPolicy: isProd ? 'require-corp' : false,
+  crossOriginOpenerPolicy: isProd ? 'same-origin' : false,
+  crossOriginResourcePolicy: isProd ? 'same-origin' : false,
+};
+
+/**
+ * CSRF Configuration
+ */
+export const csrfConfig: CsrfConfig = {
+  tokenLength: 32,
+  cookieName: 'csrf-token',
+  headerName: 'x-csrf-token',
+  tokenName: 'csrf_token',
+  cookieOptions: {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'strict' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    path: '/',
+  },
+  excludePaths: [
+    '/api/webhooks',
+    '/api/webhooks/*',
+    '/health',
+    '/metrics',
+    '/api/public/*',
+  ],
+  excludeMethods: ['GET', 'HEAD', 'OPTIONS'],
+};
+
+/**
+ * API Key Configuration
+ */
+export const apiKeyConfig: ApiKeyConfig = {
+  headerName: 'x-api-key',
+  queryParamName: 'api_key',
+  allowQueryParam: !isProd, // Only allow in development
+  cacheTTL: 5 * 60 * 1000, // 5 minutes
+};
+
+/**
+ * Rate Limiting Configuration
+ */
+export const rateLimitConfig = {
+  // Redis configuration
+  redis: {
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    enabled: isProd || process.env.ENABLE_REDIS === 'true',
+  },
+
+  // Authentication endpoints (strict)
+  auth: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    maxRequests: isProd ? 5 : 100, // Relaxed in development
+    message: 'Too many authentication attempts. Please try again later.',
+  },
+
+  // API endpoints (standard)
+  api: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    maxRequests: isProd ? 100 : 1000, // Relaxed in development
+    message: 'API rate limit exceeded. Please try again later.',
+  },
+
+  // General endpoints
+  general: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    maxRequests: isProd ? 100 : 1000, // Relaxed in development
+    message: 'Rate limit exceeded. Please try again later.',
+  },
+
+  // Strict endpoints (password reset, etc.)
+  strict: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    maxRequests: isProd ? 3 : 50, // Very strict in production
+    message: 'Too many requests. Please try again later.',
+  },
+};
+
+/**
+ * Session Configuration
+ */
+export const sessionConfig = {
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  name: 'sessionId',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: isProd,
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: isProd ? 'strict' as const : 'lax' as const,
+  },
+  proxy: isProd, // Trust proxy in production
+};
+
+/**
+ * JWT Configuration
+ */
+export const jwtConfig = {
+  secret: process.env.JWT_SECRET || 'your-jwt-secret-change-in-production',
+  accessTokenExpiry: '15m',
+  refreshTokenExpiry: '7d',
+  issuer: process.env.JWT_ISSUER || 'your-app-name',
+  audience: process.env.JWT_AUDIENCE || 'your-app-users',
+};
+
+/**
+ * Password Configuration
+ */
+export const passwordConfig = {
+  // bcrypt salt rounds
+  saltRounds: 12,
+
+  // Password requirements
+  minLength: isProd ? 12 : 8, // Stricter in production
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumbers: true,
+  requireSpecialChars: true,
+
+  // Password reset
+  resetTokenExpiry: 60 * 60 * 1000, // 1 hour
+  resetTokenLength: 32,
+};
+
+/**
+ * File Upload Configuration
+ */
+export const fileUploadConfig = {
+  maxFileSize: 5 * 1024 * 1024, // 5MB
+  allowedImageTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+  allowedImageExtensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
+  allowedDocumentTypes: ['application/pdf', 'application/msword'],
+  allowedDocumentExtensions: ['.pdf', '.doc', '.docx'],
+};
+
+/**
+ * Logging Configuration
+ */
+export const loggingConfig = {
+  level: isProd ? 'info' : 'debug',
+
+  // Log security events
+  logAuthAttempts: true,
+  logFailedAuth: true,
+  logRateLimitExceeded: true,
+  logApiKeyUsage: isProd,
+  logCsrfViolations: true,
+
+  // Sensitive data
+  maskPasswords: true,
+  maskTokens: true,
+  maskEmails: isProd,
+};
+
+/**
+ * Monitoring Configuration
+ */
+export const monitoringConfig = {
+  // Health check endpoint
+  healthCheckPath: '/health',
+
+  // Metrics endpoint
+  metricsPath: '/metrics',
+
+  // Enable detailed metrics
+  detailedMetrics: !isProd,
+
+  // Alert thresholds
+  alerts: {
+    failedAuthThreshold: 10, // Alert after 10 failed attempts
+    rateLimitThreshold: 100, // Alert after 100 rate limit hits
+    errorRateThreshold: 0.05, // Alert if error rate > 5%
+  },
+};
+
+/**
+ * API Documentation Configuration
+ */
+export const apiDocsConfig = {
+  enabled: !isProd || process.env.ENABLE_API_DOCS === 'true',
+  path: '/api-docs',
+
+  // Swagger/OpenAPI
+  title: '{{projectName}} API',
+  version: '1.0.0',
+  description: 'API documentation for {{projectName}}',
+
+  // Security schemes
+  securitySchemes: {
+    apiKey: {
+      type: 'apiKey',
+      in: 'header',
+      name: 'X-API-Key',
+    },
+    bearerAuth: {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+    },
+  },
+};
+
+/**
+ * Email Configuration
+ */
+export const emailConfig = {
+  from: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
+
+  // Rate limiting for emails
+  maxEmailsPerHour: 10,
+  maxEmailsPerDay: 50,
+
+  // Templates
+  templates: {
+    welcome: 'welcome',
+    passwordReset: 'password-reset',
+    emailVerification: 'email-verification',
+  },
+};
+
+/**
+ * Webhook Configuration
+ */
+export const webhookConfig = {
+  // Signature verification
+  signatureHeader: 'x-webhook-signature',
+  signatureAlgorithm: 'sha256',
+
+  // Retry configuration
+  maxRetries: 3,
+  retryDelay: 1000, // 1 second
+
+  // Timeout
+  timeout: 30000, // 30 seconds
+};
+
+/**
+ * Export all configurations
+ */
+export default {
+  isProd,
+  isDev,
+  cors: corsConfig,
+  securityHeaders: securityHeadersConfig,
+  csrf: csrfConfig,
+  apiKey: apiKeyConfig,
+  rateLimit: rateLimitConfig,
+  session: sessionConfig,
+  jwt: jwtConfig,
+  password: passwordConfig,
+  fileUpload: fileUploadConfig,
+  logging: loggingConfig,
+  monitoring: monitoringConfig,
+  apiDocs: apiDocsConfig,
+  email: emailConfig,
+  webhook: webhookConfig,
+};

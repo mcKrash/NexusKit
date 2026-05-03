@@ -1,0 +1,256 @@
+# Database Setup - PostgreSQL with Prisma
+
+This directory contains the database schema and configuration for your SaaS application using PostgreSQL and Prisma ORM.
+
+## Features
+
+- 🔐 User authentication with NextAuth support
+- 💳 Stripe subscription and payment management
+- 🔑 OAuth provider support (Google, GitHub, etc.)
+- 📧 Email verification tokens
+- 🎯 Role-based access control (USER, ADMIN, SUPER_ADMIN)
+- 📊 Performance-optimized indexes
+- 🔄 Cascade deletes for data integrity
+- 🌱 Seed data for development
+
+## Prerequisites
+
+- Node.js 18+ installed
+- PostgreSQL 14+ running locally or remotely
+- Environment variables configured
+
+## Quick Start
+
+### 1. Install Dependencies
+
+```bash
+npm install @prisma/client prisma bcryptjs
+npm install -D tsx @types/bcryptjs
+```
+
+### 2. Configure Environment
+
+Copy `.env.example` to `.env` and update the `DATABASE_URL`:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+```env
+DATABASE_URL="postgresql://username:password@localhost:5432/{{projectName}}_dev?schema=public"
+```
+
+### 3. Generate Prisma Client
+
+```bash
+npm run db:generate
+```
+
+### 4. Push Schema to Database
+
+For development (no migrations):
+```bash
+npm run db:push
+```
+
+Or create a migration:
+```bash
+npm run db:migrate
+```
+
+### 5. Seed the Database
+
+```bash
+npm run db:seed
+```
+
+This creates demo accounts:
+- **Admin**: admin@example.com / password123
+- **Free User**: user@example.com / password123
+- **Pro User**: pro@example.com / password123
+- **Enterprise User**: enterprise@example.com / password123
+
+## Database Schema
+
+### Models
+
+#### User
+- Authentication and profile information
+- Email verification support
+- Stripe customer integration
+- Role-based access control
+
+#### Account
+- OAuth provider accounts (Google, GitHub, etc.)
+- Managed by NextAuth
+
+#### Session
+- Session management for NextAuth
+- Automatic cleanup of expired sessions
+
+#### VerificationToken
+- Email verification tokens
+- Password reset tokens
+
+#### Subscription
+- Stripe subscription tracking
+- Plans: FREE, PRO, ENTERPRISE
+- Status tracking (ACTIVE, CANCELED, PAST_DUE, etc.)
+- Billing period management
+
+#### Payment
+- Payment history
+- Invoice tracking
+- Multiple statuses (PENDING, SUCCEEDED, FAILED, REFUNDED)
+
+## Available Scripts
+
+```bash
+# Generate Prisma Client
+npm run db:generate
+
+# Push schema without migrations (dev)
+npm run db:push
+
+# Create and run migrations (dev)
+npm run db:migrate
+
+# Run migrations (production)
+npm run db:migrate:prod
+
+# Seed database with demo data
+npm run db:seed
+
+# Open Prisma Studio (GUI)
+npm run db:studio
+
+# Reset database (WARNING: deletes all data)
+npm run db:reset
+```
+
+## Usage in Code
+
+### Import the Prisma Client
+
+```typescript
+import { prisma } from '@/lib/db';
+```
+
+### Query Examples
+
+#### Get user with subscriptions
+```typescript
+const user = await prisma.user.findUnique({
+  where: { email: 'user@example.com' },
+  include: {
+    subscriptions: true,
+    payments: {
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    },
+  },
+});
+```
+
+#### Create a subscription
+```typescript
+const subscription = await prisma.subscription.create({
+  data: {
+    userId: user.id,
+    stripeSubscriptionId: 'sub_xxx',
+    status: 'ACTIVE',
+    plan: 'PRO',
+    currentPeriodStart: new Date(),
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  },
+});
+```
+
+#### Record a payment
+```typescript
+const payment = await prisma.payment.create({
+  data: {
+    userId: user.id,
+    amount: 2900, // $29.00 in cents
+    currency: 'usd',
+    status: 'SUCCEEDED',
+    stripeInvoiceId: 'in_xxx',
+    description: 'Pro Plan - Monthly',
+    paidAt: new Date(),
+  },
+});
+```
+
+## Production Considerations
+
+### Connection Pooling
+
+For serverless environments (Vercel, AWS Lambda), configure connection limits:
+
+```env
+DATABASE_URL="postgresql://user:pass@host:port/db?connection_limit=5&pool_timeout=10"
+```
+
+### Migrations
+
+Always use migrations in production:
+
+```bash
+# Create migration
+npm run db:migrate
+
+# Deploy to production
+npm run db:migrate:prod
+```
+
+### Indexes
+
+The schema includes performance indexes on:
+- User email and Stripe customer ID
+- Subscription status and Stripe subscription ID
+- Payment status and creation date
+- Session tokens
+
+### Security
+
+- Passwords are hashed with bcrypt (12 rounds)
+- Foreign keys with cascade deletes prevent orphaned data
+- Unique constraints on critical fields (email, tokens, IDs)
+
+## Troubleshooting
+
+### Connection Issues
+
+```bash
+# Test database connection
+psql $DATABASE_URL
+
+# Check Prisma connection
+npx prisma db pull
+```
+
+### Schema Out of Sync
+
+```bash
+# Reset and regenerate
+npm run db:reset
+npm run db:seed
+```
+
+### Migration Issues
+
+```bash
+# Mark migration as applied without running
+npx prisma migrate resolve --applied "migration_name"
+
+# Mark as rolled back
+npx prisma migrate resolve --rolled-back "migration_name"
+```
+
+## Resources
+
+- [Prisma Documentation](https://www.prisma.io/docs)
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+- [NextAuth Prisma Adapter](https://next-auth.js.org/adapters/prisma)
+- [Stripe Billing](https://stripe.com/docs/billing)

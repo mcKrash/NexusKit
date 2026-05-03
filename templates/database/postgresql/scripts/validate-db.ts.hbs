@@ -1,0 +1,265 @@
+#!/usr/bin/env tsx
+/**
+ * Database Validation Script
+ *
+ * Checks if the database is properly configured and accessible.
+ * Run with: npx tsx scripts/validate-db.ts
+ */
+
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+interface ValidationResult {
+  check: string;
+  passed: boolean;
+  message: string;
+}
+
+const results: ValidationResult[] = [];
+
+async function validateConnection() {
+  try {
+    await prisma.$connect();
+    results.push({
+      check: 'Database Connection',
+      passed: true,
+      message: 'Successfully connected to database',
+    });
+  } catch (error) {
+    results.push({
+      check: 'Database Connection',
+      passed: false,
+      message: `Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+    return false;
+  }
+  return true;
+}
+
+async function validateTables() {
+  try {
+    // Check if User table exists and is accessible
+    await prisma.user.count();
+    results.push({
+      check: 'User Table',
+      passed: true,
+      message: 'User table is accessible',
+    });
+  } catch (error) {
+    results.push({
+      check: 'User Table',
+      passed: false,
+      message: `User table error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+    return false;
+  }
+
+  try {
+    // Check if Subscription table exists
+    await prisma.subscription.count();
+    results.push({
+      check: 'Subscription Table',
+      passed: true,
+      message: 'Subscription table is accessible',
+    });
+  } catch (error) {
+    results.push({
+      check: 'Subscription Table',
+      passed: false,
+      message: `Subscription table error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+  }
+
+  try {
+    // Check if Payment table exists
+    await prisma.payment.count();
+    results.push({
+      check: 'Payment Table',
+      passed: true,
+      message: 'Payment table is accessible',
+    });
+  } catch (error) {
+    results.push({
+      check: 'Payment Table',
+      passed: false,
+      message: `Payment table error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+  }
+
+  return true;
+}
+
+async function validateIndexes() {
+  try {
+    // Check if we can query with indexed fields
+    await prisma.user.findUnique({
+      where: { email: 'test@example.com' },
+    });
+
+    await prisma.subscription.findFirst({
+      where: { status: 'ACTIVE' },
+    });
+
+    results.push({
+      check: 'Database Indexes',
+      passed: true,
+      message: 'Indexes are working correctly',
+    });
+  } catch (error) {
+    results.push({
+      check: 'Database Indexes',
+      passed: false,
+      message: `Index query failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+  }
+}
+
+async function validateRelations() {
+  try {
+    // Check if relations work
+    await prisma.user.findFirst({
+      include: {
+        subscriptions: true,
+        payments: true,
+      },
+    });
+
+    results.push({
+      check: 'Table Relations',
+      passed: true,
+      message: 'Relations are working correctly',
+    });
+  } catch (error) {
+    results.push({
+      check: 'Table Relations',
+      passed: false,
+      message: `Relations error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+  }
+}
+
+async function checkEnvironment() {
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    results.push({
+      check: 'Environment Variables',
+      passed: false,
+      message: 'DATABASE_URL is not set',
+    });
+    return false;
+  }
+
+  results.push({
+    check: 'Environment Variables',
+    passed: true,
+    message: 'DATABASE_URL is configured',
+  });
+
+  return true;
+}
+
+async function checkSeedData() {
+  try {
+    const userCount = await prisma.user.count();
+
+    if (userCount === 0) {
+      results.push({
+        check: 'Seed Data',
+        passed: false,
+        message: 'No users found. Run: npm run db:seed',
+      });
+    } else {
+      results.push({
+        check: 'Seed Data',
+        passed: true,
+        message: `Found ${userCount} user(s) in database`,
+      });
+    }
+  } catch (error) {
+    results.push({
+      check: 'Seed Data',
+      passed: false,
+      message: `Error checking seed data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+  }
+}
+
+async function printResults() {
+  console.log('\n🔍 Database Validation Results\n');
+  console.log('━'.repeat(60));
+
+  let allPassed = true;
+
+  for (const result of results) {
+    const icon = result.passed ? '✅' : '❌';
+    const status = result.passed ? 'PASS' : 'FAIL';
+
+    console.log(`${icon} ${result.check.padEnd(25)} [${status}]`);
+    console.log(`   ${result.message}`);
+    console.log('');
+
+    if (!result.passed) {
+      allPassed = false;
+    }
+  }
+
+  console.log('━'.repeat(60));
+
+  if (allPassed) {
+    console.log('✅ All checks passed! Database is ready to use.\n');
+    return 0;
+  } else {
+    console.log('❌ Some checks failed. Please review the errors above.\n');
+    console.log('Common fixes:');
+    console.log('  1. Check DATABASE_URL in .env');
+    console.log('  2. Run: npm run db:generate');
+    console.log('  3. Run: npm run db:migrate');
+    console.log('  4. Run: npm run db:seed');
+    console.log('');
+    return 1;
+  }
+}
+
+async function main() {
+  console.log('Starting database validation...\n');
+
+  // Check environment first
+  const hasEnv = await checkEnvironment();
+
+  if (!hasEnv) {
+    await printResults();
+    return 1;
+  }
+
+  // Check connection
+  const connected = await validateConnection();
+
+  if (!connected) {
+    await printResults();
+    return 1;
+  }
+
+  // Run all validations
+  await validateTables();
+  await validateIndexes();
+  await validateRelations();
+  await checkSeedData();
+
+  // Print results
+  const exitCode = await printResults();
+
+  await prisma.$disconnect();
+
+  return exitCode;
+}
+
+main()
+  .then((exitCode) => {
+    process.exit(exitCode);
+  })
+  .catch((error) => {
+    console.error('❌ Validation script error:', error);
+    process.exit(1);
+  });

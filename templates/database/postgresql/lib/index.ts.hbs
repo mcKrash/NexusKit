@@ -1,0 +1,60 @@
+/**
+ * Database module exports
+ *
+ * This file provides a single entry point for all database-related functionality
+ */
+
+// Core Prisma client and utilities
+export {
+  prisma,
+  checkDatabaseConnection,
+  disconnectDatabase,
+} from './db';
+
+// Type exports
+export type {
+  User,
+  Account,
+  Session,
+  VerificationToken,
+  Subscription,
+  Payment,
+  UserRole,
+  SubscriptionStatus,
+  PricingPlan,
+  PaymentStatus,
+} from './db';
+
+// Database operation helpers
+export {
+  getUserWithSubscription,
+  getUserByEmail,
+  getUserPlan,
+  hasActiveSubscription,
+  updateSubscriptionStatus,
+  upsertSubscription,
+  recordPayment,
+  getUserPayments,
+  getSubscriptionByStripeId,
+  cancelSubscriptionAtPeriodEnd,
+  reactivateSubscription,
+  updateUserStripeCustomerId,
+  getUserByStripeCustomerId,
+  cleanupExpiredSessions,
+  cleanupExpiredTokens,
+} from './db-utils';
+
+// Subscription helpers and access control
+export {
+  hasAccess,
+  getPlanFeatures,
+  getPlanLimits,
+  isWithinLimit,
+  getUsagePercentage,
+  canUpgrade,
+  getNextPlan,
+  isSubscriptionActive,
+  subscriptionNeedsAttention,
+  formatSubscriptionStatus,
+  getStatusBadgeColor,
+} from './subscription-helpers';

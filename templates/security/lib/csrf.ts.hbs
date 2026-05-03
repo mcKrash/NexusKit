@@ -1,0 +1,395 @@
+import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
+import { Redis } from 'ioredis';
+
+// CSRF configuration interface
+export interface CsrfConfig {
+  tokenLength?: number;
+  cookieName?: string;
+  headerName?: string;
+  tokenName?: string;
+  cookieOptions?: {
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: 'strict' | 'lax' | 'none';
+    maxAge?: number;
+    path?: string;
+    domain?: string;
+  };
+  excludePaths?: string[];
+  excludeMethods?: string[];
+  redis?: Redis;
+  sessionKey?: string;
+}
+
+// Default CSRF configuration
+const defaultConfig: Required<Omit<CsrfConfig, 'redis' | 'sessionKey'>> = {
+  tokenLength: 32,
+  cookieName: 'csrf-token',
+  headerName: 'x-csrf-token',
+  tokenName: 'csrf_token',
+  cookieOptions: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    path: '/',
+  },
+  excludePaths: ['/api/webhooks', '/health', '/metrics'],
+  excludeMethods: ['GET', 'HEAD', 'OPTIONS'],
+};
+
+// In-memory token store (fallback)
+const tokenStore = new Map<string, { token: string; createdAt: number }>();
+
+// Clean up expired tokens every hour
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = defaultConfig.cookieOptions.maxAge;
+  for (const [key, value] of tokenStore.entries()) {
+    if (now - value.createdAt > maxAge) {
+      tokenStore.delete(key);
+    }
+  }
+}, 60 * 60 * 1000);
+
+/**
+ * Generate a cryptographically secure random token
+ */
+export function generateToken(length: number = 32): string {
+  return crypto.randomBytes(length).toString('base64url');
+}
+
+/**
+ * Get session identifier from request
+ */
+function getSessionId(req: Request, config: CsrfConfig): string {
+  // Try to get session ID from session
+  if (config.sessionKey && (req as any).session?.[config.sessionKey]) {
+    return (req as any).session[config.sessionKey];
+  }
+
+  // Try to get session ID from cookie
+  if ((req as any).sessionID) {
+    return (req as any).sessionID;
+  }
+
+  // Try to get user ID if authenticated
+  if ((req as any).user?.id) {
+    return `user:${(req as any).user.id}`;
+  }
+
+  // Fallback to IP-based identifier
+  const forwarded = req.headers['x-forwarded-for'];
+  const ip = typeof forwarded === 'string'
+    ? forwarded.split(',')[0].trim()
+    : req.ip || req.socket.remoteAddress || 'unknown';
+
+  return `ip:${ip}`;
+}
+
+/**
+ * Store CSRF token
+ */
+async function storeToken(
+  sessionId: string,
+  token: string,
+  config: CsrfConfig
+): Promise<void> {
+  if (config.redis) {
+    const key = `csrf:${sessionId}`;
+    const ttl = Math.floor((config.cookieOptions?.maxAge || defaultConfig.cookieOptions.maxAge) / 1000);
+    await config.redis.setex(key, ttl, token);
+  } else {
+    tokenStore.set(sessionId, {
+      token,
+      createdAt: Date.now(),
+    });
+  }
+}
+
+/**
+ * Retrieve CSRF token
+ */
+async function retrieveToken(
+  sessionId: string,
+  config: CsrfConfig
+): Promise<string | null> {
+  if (config.redis) {
+    const key = `csrf:${sessionId}`;
+    return await config.redis.get(key);
+  } else {
+    const record = tokenStore.get(sessionId);
+    if (!record) return null;
+
+    const maxAge = config.cookieOptions?.maxAge || defaultConfig.cookieOptions.maxAge;
+    if (Date.now() - record.createdAt > maxAge) {
+      tokenStore.delete(sessionId);
+      return null;
+    }
+
+    return record.token;
+  }
+}
+
+/**
+ * Delete CSRF token
+ */
+async function deleteToken(sessionId: string, config: CsrfConfig): Promise<void> {
+  if (config.redis) {
+    const key = `csrf:${sessionId}`;
+    await config.redis.del(key);
+  } else {
+    tokenStore.delete(sessionId);
+  }
+}
+
+/**
+ * Check if path should be excluded from CSRF protection
+ */
+function shouldExcludePath(path: string, excludePaths: string[]): boolean {
+  return excludePaths.some(excluded => {
+    if (excluded.endsWith('*')) {
+      return path.startsWith(excluded.slice(0, -1));
+    }
+    return path === excluded;
+  });
+}
+
+/**
+ * CSRF protection middleware factory
+ */
+export function csrf(config: CsrfConfig = {}) {
+  const options = { ...defaultConfig, ...config };
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Skip excluded methods
+      if (options.excludeMethods.includes(req.method)) {
+        return next();
+      }
+
+      // Skip excluded paths
+      if (shouldExcludePath(req.path, options.excludePaths)) {
+        return next();
+      }
+
+      const sessionId = getSessionId(req, options);
+
+      // For safe methods, generate and send token
+      if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        let token = await retrieveToken(sessionId, options);
+
+        if (!token) {
+          token = generateToken(options.tokenLength);
+          await storeToken(sessionId, token, options);
+        }
+
+        // Set token in cookie
+        res.cookie(options.cookieName, token, options.cookieOptions);
+
+        // Make token available to templates
+        (res as any).locals = (res as any).locals || {};
+        (res as any).locals.csrfToken = token;
+
+        return next();
+      }
+
+      // For unsafe methods, validate token
+      const storedToken = await retrieveToken(sessionId, options);
+
+      if (!storedToken) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'CSRF token not found. Please refresh the page.',
+        });
+      }
+
+      // Get token from request
+      let requestToken: string | undefined;
+
+      // Try to get from header
+      requestToken = req.headers[options.headerName] as string;
+
+      // Try to get from body
+      if (!requestToken && req.body) {
+        requestToken = req.body[options.tokenName];
+      }
+
+      // Try to get from query
+      if (!requestToken && req.query) {
+        requestToken = req.query[options.tokenName] as string;
+      }
+
+      if (!requestToken) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'CSRF token missing from request.',
+        });
+      }
+
+      // Constant-time comparison to prevent timing attacks
+      if (!crypto.timingSafeEqual(Buffer.from(storedToken), Buffer.from(requestToken))) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Invalid CSRF token.',
+        });
+      }
+
+      // Token is valid, continue
+      next();
+    } catch (error) {
+      console.error('CSRF middleware error:', error);
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: 'CSRF validation failed.',
+      });
+    }
+  };
+}
+
+/**
+ * Generate and return CSRF token for use in forms
+ */
+export function getCsrfToken(req: Request): string | null {
+  return (req as any).csrfToken?.() || (req as any).locals?.csrfToken || null;
+}
+
+/**
+ * Middleware to expose CSRF token to templates
+ */
+export function csrfToken(config: CsrfConfig = {}) {
+  const options = { ...defaultConfig, ...config };
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const sessionId = getSessionId(req, options);
+    let token = await retrieveToken(sessionId, options);
+
+    if (!token) {
+      token = generateToken(options.tokenLength);
+      await storeToken(sessionId, token, options);
+    }
+
+    // Set token in cookie
+    res.cookie(options.cookieName, token, options.cookieOptions);
+
+    // Make token available
+    (res as any).locals = (res as any).locals || {};
+    (res as any).locals.csrfToken = token;
+
+    // Add helper function
+    (req as any).csrfToken = () => token;
+
+    next();
+  };
+}
+
+/**
+ * Regenerate CSRF token (useful after login/logout)
+ */
+export async function regenerateCsrfToken(
+  req: Request,
+  res: Response,
+  config: CsrfConfig = {}
+): Promise<string> {
+  const options = { ...defaultConfig, ...config };
+  const sessionId = getSessionId(req, options);
+
+  // Delete old token
+  await deleteToken(sessionId, options);
+
+  // Generate new token
+  const newToken = generateToken(options.tokenLength);
+  await storeToken(sessionId, newToken, options);
+
+  // Set new token in cookie
+  res.cookie(options.cookieName, newToken, options.cookieOptions);
+
+  // Update locals
+  (res as any).locals = (res as any).locals || {};
+  (res as any).locals.csrfToken = newToken;
+
+  return newToken;
+}
+
+/**
+ * Double Submit Cookie pattern (alternative approach)
+ */
+export function doubleCsrf(config: Partial<CsrfConfig> = {}) {
+  const options = { ...defaultConfig, ...config };
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    // Skip safe methods and excluded paths
+    if (
+      options.excludeMethods.includes(req.method) ||
+      shouldExcludePath(req.path, options.excludePaths)
+    ) {
+      // Generate and set token for safe methods
+      if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        const token = generateToken(options.tokenLength);
+        res.cookie(options.cookieName, token, options.cookieOptions);
+        (res as any).locals = (res as any).locals || {};
+        (res as any).locals.csrfToken = token;
+      }
+      return next();
+    }
+
+    // For unsafe methods, validate double submit
+    const cookieToken = req.cookies[options.cookieName];
+    const headerToken = req.headers[options.headerName] as string;
+
+    if (!cookieToken || !headerToken) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'CSRF token missing.',
+      });
+    }
+
+    // Constant-time comparison
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Invalid CSRF token.',
+        });
+      }
+    } catch (error) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Invalid CSRF token format.',
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Initialize CSRF protection with Redis
+ */
+export function initializeCsrfRedis(redisUrl: string): Redis | null {
+  try {
+    const redis = new Redis(redisUrl, {
+      retryStrategy: (times) => {
+        const delay = Math.min(times * 50, 2000);
+        return delay;
+      },
+      maxRetriesPerRequest: 3,
+    });
+
+    redis.on('error', (err) => {
+      console.error('CSRF Redis connection error:', err);
+    });
+
+    redis.on('connect', () => {
+      console.log('CSRF Redis connected');
+    });
+
+    return redis;
+  } catch (error) {
+    console.error('Failed to initialize CSRF Redis:', error);
+    return null;
+  }
+}
+
+export default csrf;

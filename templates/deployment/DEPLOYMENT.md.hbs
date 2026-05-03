@@ -1,0 +1,906 @@
+# Deployment Guide
+
+This guide covers deploying your **{{projectName}}** application to various platforms.
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Environment Variables](#environment-variables)
+- [Deployment Platforms](#deployment-platforms)
+  - [Vercel (Recommended)](#vercel-recommended)
+  - [Railway](#railway)
+  - [Fly.io](#flyio)
+  - [Docker](#docker)
+  - [Kubernetes](#kubernetes)
+- [Database Setup](#database-setup)
+- [Post-Deployment](#post-deployment)
+- [Monitoring & Health Checks](#monitoring--health-checks)
+- [Troubleshooting](#troubleshooting)
+
+## Prerequisites
+
+Before deploying, ensure you have:
+
+- [ ] Node.js 20+ installed locally
+- [ ] Git repository set up
+- [ ] All required environment variables
+- [ ] Database provisioned (PostgreSQL recommended)
+{{#if features.redis}}
+- [ ] Redis instance (optional but recommended for caching)
+{{/if}}
+{{#if payments.stripe}}
+- [ ] Stripe account configured
+{{/if}}
+- [ ] Domain name (optional)
+
+## Environment Variables
+
+### Required Environment Variables
+
+Create a `.env.production` file with the following variables:
+
+```env
+# Database
+DATABASE_URL="postgresql://user:password@host:5432/database?schema=public"
+
+{{#if features.redis}}
+# Redis (optional)
+REDIS_URL="redis://host:6379"
+{{/if}}
+
+# NextAuth.js
+NEXTAUTH_URL="https://yourdomain.com"
+NEXTAUTH_SECRET="your-super-secret-key-min-32-chars"
+
+{{#if auth.github}}
+# GitHub OAuth
+GITHUB_ID="your-github-client-id"
+GITHUB_SECRET="your-github-client-secret"
+{{/if}}
+
+{{#if auth.google}}
+# Google OAuth
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+{{/if}}
+
+{{#if payments.stripe}}
+# Stripe
+STRIPE_SECRET_KEY="sk_live_..."
+STRIPE_PUBLISHABLE_KEY="pk_live_..."
+STRIPE_WEBHOOK_SECRET="whsec_..."
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_live_..."
+{{/if}}
+
+{{#if email.resend}}
+# Resend
+RESEND_API_KEY="re_..."
+{{/if}}
+
+{{#if email.sendgrid}}
+# SendGrid
+SENDGRID_API_KEY="SG...."
+{{/if}}
+
+# App Configuration
+NEXT_PUBLIC_APP_URL="https://yourdomain.com"
+NODE_ENV="production"
+```
+
+### Generating Secrets
+
+Generate a secure `NEXTAUTH_SECRET`:
+
+```bash
+openssl rand -base64 32
+```
+
+---
+
+## Deployment Platforms
+
+### Vercel (Recommended)
+
+Vercel is the easiest way to deploy Next.js applications.
+
+#### 1. Install Vercel CLI
+
+```bash
+npm install -g vercel
+```
+
+#### 2. Login to Vercel
+
+```bash
+vercel login
+```
+
+#### 3. Deploy
+
+```bash
+# Production deployment
+vercel --prod
+
+# Or use the Vercel dashboard
+```
+
+#### 4. Configure Environment Variables
+
+In the Vercel dashboard:
+
+1. Go to **Settings** → **Environment Variables**
+2. Add all variables from your `.env.production` file
+3. Set the appropriate environments (Production, Preview, Development)
+
+#### 5. Configure Database
+
+```bash
+# Run migrations on production database
+DATABASE_URL="your-production-db-url" pnpm db:push
+```
+
+#### 6. Set up Vercel.json
+
+The `vercel.json` file is already configured. Review and adjust:
+
+- **Regions**: Set your preferred deployment region
+- **Function timeouts**: Adjust based on your needs
+- **Cron jobs**: Configure scheduled tasks
+
+**Important Vercel Settings:**
+
+- Framework Preset: **Next.js**
+- Build Command: `pnpm build`
+- Output Directory: `.next`
+- Install Command: `pnpm install`
+
+---
+
+### Railway
+
+Railway provides a simple deployment experience with built-in database services.
+
+#### 1. Install Railway CLI
+
+```bash
+npm install -g @railway/cli
+```
+
+#### 2. Login to Railway
+
+```bash
+railway login
+```
+
+#### 3. Initialize Project
+
+```bash
+railway init
+```
+
+#### 4. Add PostgreSQL Database
+
+```bash
+railway add postgresql
+```
+
+{{#if features.redis}}
+#### 5. Add Redis (Optional)
+
+```bash
+railway add redis
+```
+{{/if}}
+
+#### 6. Set Environment Variables
+
+```bash
+railway variables set NEXTAUTH_SECRET="your-secret"
+railway variables set NEXTAUTH_URL="${{{{raw}}}}{{RAILWAY_PUBLIC_DOMAIN}}{{{{/raw}}}}"
+# Add other variables...
+```
+
+#### 7. Deploy
+
+```bash
+railway up
+```
+
+#### 8. Run Migrations
+
+```bash
+railway run pnpm db:push
+```
+
+**Railway Configuration:**
+
+The `railway.json` file is pre-configured with:
+- Health checks
+- Auto-restart policies
+- Service configuration
+
+---
+
+### Fly.io
+
+Fly.io offers global edge deployment with excellent performance.
+
+#### 1. Install Flyctl
+
+```bash
+# macOS
+brew install flyctl
+
+# Windows
+iwr https://fly.io/install.ps1 -useb | iex
+
+# Linux
+curl -L https://fly.io/install.sh | sh
+```
+
+#### 2. Login to Fly.io
+
+```bash
+flyctl auth login
+```
+
+#### 3. Create Fly App
+
+```bash
+flyctl launch --no-deploy
+```
+
+#### 4. Create PostgreSQL Database
+
+```bash
+flyctl postgres create --name {{projectName}}-db
+flyctl postgres attach {{projectName}}-db
+```
+
+{{#if features.redis}}
+#### 5. Create Redis (Optional)
+
+```bash
+flyctl redis create --name {{projectName}}-redis
+```
+{{/if}}
+
+#### 6. Set Secrets
+
+```bash
+flyctl secrets set NEXTAUTH_SECRET="your-secret"
+flyctl secrets set NEXTAUTH_URL="https://{{projectName}}.fly.dev"
+{{#if payments.stripe}}
+flyctl secrets set STRIPE_SECRET_KEY="sk_live_..."
+flyctl secrets set STRIPE_WEBHOOK_SECRET="whsec_..."
+{{/if}}
+# Add other secrets...
+```
+
+#### 7. Deploy
+
+```bash
+flyctl deploy
+```
+
+#### 8. Scale (Optional)
+
+```bash
+# Scale to multiple regions
+flyctl scale count 2
+
+# Scale VM size
+flyctl scale vm shared-cpu-2x --memory 2048
+```
+
+**Fly.io Tips:**
+
+- Use `fly.toml` for configuration
+- Set up auto-scaling for production
+- Configure health checks (already included)
+
+---
+
+### Docker
+
+Deploy using Docker for maximum flexibility and portability.
+
+#### 1. Build Docker Image
+
+```bash
+docker build -t {{projectName}}:latest -f docker/Dockerfile .
+```
+
+#### 2. Test Locally
+
+```bash
+docker-compose up
+```
+
+#### 3. Deploy to Container Registry
+
+##### Docker Hub
+
+```bash
+docker tag {{projectName}}:latest yourusername/{{projectName}}:latest
+docker push yourusername/{{projectName}}:latest
+```
+
+##### GitHub Container Registry
+
+```bash
+echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
+docker tag {{projectName}}:latest ghcr.io/yourusername/{{projectName}}:latest
+docker push ghcr.io/yourusername/{{projectName}}:latest
+```
+
+#### 4. Run Container
+
+```bash
+docker run -d \
+  --name {{projectName}} \
+  -p 3000:3000 \
+  -e DATABASE_URL="your-db-url" \
+  -e NEXTAUTH_SECRET="your-secret" \
+  # ... other env vars
+  {{projectName}}:latest
+```
+
+#### Docker Compose Deployment
+
+```bash
+# Start all services
+docker-compose -f docker-compose.yml up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+**Docker Features:**
+
+- Multi-stage builds for optimal image size
+- Health checks included
+- Non-root user for security
+- Nginx reverse proxy configured
+
+---
+
+### Kubernetes
+
+Deploy to Kubernetes for enterprise-grade orchestration.
+
+#### Prerequisites
+
+- kubectl installed and configured
+- Access to a Kubernetes cluster (GKE, EKS, AKS, etc.)
+- Container registry for your images
+
+#### 1. Build and Push Image
+
+```bash
+docker build -t your-registry/{{projectName}}:v1 .
+docker push your-registry/{{projectName}}:v1
+```
+
+#### 2. Create Secrets
+
+```bash
+# Copy the example secrets file
+cp k8s/secrets.example.yaml k8s/secrets.yaml
+
+# Edit with your actual values (DO NOT commit this file)
+nano k8s/secrets.yaml
+
+# Apply secrets
+kubectl create namespace {{projectName}}
+kubectl apply -f k8s/secrets.yaml -n {{projectName}}
+```
+
+#### 3. Update Deployment
+
+Edit `k8s/deployment.yaml` and update:
+
+- Image name: `image: your-registry/{{projectName}}:v1`
+- Domain name in `k8s/ingress.yaml`
+
+#### 4. Deploy to Kubernetes
+
+```bash
+# Apply all configurations
+kubectl apply -f k8s/ -n {{projectName}}
+
+# Check deployment status
+kubectl get pods -n {{projectName}}
+kubectl get services -n {{projectName}}
+kubectl get ingress -n {{projectName}}
+```
+
+#### 5. Run Migrations
+
+```bash
+kubectl run migration --rm -it \
+  --image=your-registry/{{projectName}}:v1 \
+  --env="DATABASE_URL=..." \
+  --restart=Never \
+  --namespace={{projectName}} \
+  -- pnpm db:push
+```
+
+#### 6. Set up Ingress SSL
+
+Install cert-manager for automatic SSL:
+
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+# Create ClusterIssuer
+kubectl apply -f - <<EOF
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: your-email@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF
+```
+
+**Kubernetes Features:**
+
+- Horizontal Pod Autoscaling (3-10 replicas)
+- Pod Disruption Budgets
+- Network Policies
+- Resource limits and requests
+- Liveness and readiness probes
+- Rolling updates with zero downtime
+
+---
+
+## Database Setup
+
+### PostgreSQL Setup
+
+{{#if database.prisma}}
+#### 1. Create Database
+
+```bash
+# If using managed database (Neon, Supabase, Railway)
+# Create through their dashboard
+
+# If self-hosted
+createdb {{projectName}}_production
+```
+
+#### 2. Run Migrations
+
+```bash
+# Push schema
+DATABASE_URL="your-production-url" pnpm db:push
+
+# Or use migrations
+DATABASE_URL="your-production-url" pnpm db:migrate deploy
+```
+
+#### 3. Seed Database (Optional)
+
+```bash
+DATABASE_URL="your-production-url" pnpm db:seed
+```
+{{/if}}
+
+### Database Providers
+
+Recommended PostgreSQL providers:
+
+- **[Neon](https://neon.tech)** - Serverless Postgres with generous free tier
+- **[Supabase](https://supabase.com)** - Open source Firebase alternative
+- **[Railway](https://railway.app)** - Integrated with deployment
+- **[PlanetScale](https://planetscale.com)** - MySQL alternative with branching
+- **[AWS RDS](https://aws.amazon.com/rds/)** - Enterprise-grade managed database
+
+---
+
+## Post-Deployment
+
+### 1. Verify Health Check
+
+```bash
+curl https://yourdomain.com/api/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "uptime": 123.45,
+  "services": {
+    "database": {
+      "status": "up",
+      "responseTime": 15
+    }{{#if features.redis}},
+    "redis": {
+      "status": "up",
+      "responseTime": 5
+    }{{/if}}
+  },
+  "environment": "production",
+  "version": "1.0.0"
+}
+```
+
+{{#if payments.stripe}}
+### 2. Configure Stripe Webhooks
+
+1. Go to Stripe Dashboard → **Developers** → **Webhooks**
+2. Add endpoint: `https://yourdomain.com/api/webhooks/stripe`
+3. Select events:
+   - `checkout.session.completed`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+   - `invoice.paid`
+   - `invoice.payment_failed`
+4. Copy webhook secret to `STRIPE_WEBHOOK_SECRET`
+{{/if}}
+
+### 3. Set Up Domain
+
+#### Vercel
+
+1. Add domain in **Settings** → **Domains**
+2. Configure DNS:
+   - `A` record: `76.76.21.21`
+   - Or `CNAME`: `cname.vercel-dns.com`
+
+#### Other Platforms
+
+Follow platform-specific DNS configuration instructions.
+
+### 4. Configure OAuth Callbacks
+
+{{#if auth.github}}
+#### GitHub OAuth
+
+1. Go to GitHub → **Settings** → **Developer settings** → **OAuth Apps**
+2. Update **Authorization callback URL**: `https://yourdomain.com/api/auth/callback/github`
+{{/if}}
+
+{{#if auth.google}}
+#### Google OAuth
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Update **Authorized redirect URIs**: `https://yourdomain.com/api/auth/callback/google`
+{{/if}}
+
+### 5. Set Up Monitoring
+
+Recommended monitoring tools:
+
+- **[Sentry](https://sentry.io)** - Error tracking
+- **[LogRocket](https://logrocket.com)** - Session replay
+- **[Vercel Analytics](https://vercel.com/analytics)** - Web analytics
+- **[Uptime Robot](https://uptimerobot.com)** - Uptime monitoring
+
+---
+
+## Monitoring & Health Checks
+
+### Health Check Endpoint
+
+Your application includes a comprehensive health check at `/api/health`:
+
+- **200 OK**: All services healthy
+- **200 OK (degraded)**: Some non-critical services slow/down
+- **503 Service Unavailable**: Critical services down
+
+### Monitoring Setup
+
+#### Uptime Monitoring
+
+```bash
+# Example with curl
+curl -f https://yourdomain.com/api/health || alert-system
+```
+
+#### Log Aggregation
+
+Set up log shipping to:
+- Datadog
+- New Relic
+- Papertrail
+- CloudWatch (AWS)
+- Stackdriver (GCP)
+
+#### Alerts
+
+Set up alerts for:
+- Health check failures
+- High error rates
+- Slow response times
+- Database connection issues
+- High memory/CPU usage
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. Database Connection Failed
+
+**Symptoms**: Health check shows database down
+
+**Solutions**:
+```bash
+# Verify DATABASE_URL format
+echo $DATABASE_URL
+
+# Test connection
+psql $DATABASE_URL -c "SELECT 1"
+
+# Check firewall rules
+# Ensure your deployment IP is whitelisted
+```
+
+#### 2. OAuth Redirect Error
+
+**Symptoms**: "Redirect URI mismatch" error
+
+**Solutions**:
+- Verify `NEXTAUTH_URL` matches your domain
+- Update OAuth app redirect URIs
+- Check for trailing slashes
+
+{{#if payments.stripe}}
+#### 3. Stripe Webhook Failures
+
+**Symptoms**: Webhook events not processing
+
+**Solutions**:
+```bash
+# Test webhook locally with Stripe CLI
+stripe listen --forward-to localhost:3000/api/webhooks/stripe
+
+# Verify webhook secret matches
+echo $STRIPE_WEBHOOK_SECRET
+
+# Check webhook signature validation in code
+```
+{{/if}}
+
+#### 4. Build Failures
+
+**Symptoms**: Deployment fails during build
+
+**Solutions**:
+```bash
+# Test build locally
+pnpm build
+
+# Check for type errors
+pnpm type-check
+
+# Verify all dependencies installed
+pnpm install --frozen-lockfile
+```
+
+#### 5. High Memory Usage
+
+**Symptoms**: Application crashes or restarts
+
+**Solutions**:
+- Increase memory limits (Vercel: upgrade plan)
+- Optimize database queries
+- Implement caching
+- Review memory leaks
+
+{{#if features.redis}}
+#### 6. Redis Connection Issues
+
+**Symptoms**: Redis health check failing
+
+**Solutions**:
+```bash
+# Test Redis connection
+redis-cli -u $REDIS_URL ping
+
+# Check Redis memory
+redis-cli -u $REDIS_URL INFO memory
+
+# Clear cache if needed
+redis-cli -u $REDIS_URL FLUSHALL
+```
+{{/if}}
+
+### Debug Mode
+
+Enable debug logging:
+
+```bash
+# Set environment variable
+DEBUG=* pnpm start
+
+# Or in production
+LOG_LEVEL=debug
+```
+
+### Getting Help
+
+If you encounter issues:
+
+1. Check application logs
+2. Review health check endpoint
+3. Verify all environment variables
+4. Test database connectivity
+5. Check platform status pages
+6. Review security groups/firewall rules
+
+---
+
+## CI/CD Pipeline
+
+The included GitHub Actions workflow (`.github/workflows/deploy.yml`) provides:
+
+- ✅ Automated testing on PRs
+- ✅ Linting and type checking
+- ✅ Build verification
+- ✅ Security scanning
+- ✅ Automatic deployment to staging (develop branch)
+- ✅ Automatic deployment to production (main branch)
+- ✅ Health checks after deployment
+- ✅ Slack notifications
+
+### GitHub Secrets Required
+
+Add these secrets to your GitHub repository:
+
+```bash
+# Vercel
+VERCEL_TOKEN
+VERCEL_ORG_ID
+VERCEL_PROJECT_ID
+
+# Railway
+RAILWAY_TOKEN
+RAILWAY_SERVICE
+
+# Fly.io
+FLY_API_TOKEN
+
+# Database
+STAGING_DATABASE_URL
+PRODUCTION_DATABASE_URL
+
+{{#if features.redis}}
+# Redis
+STAGING_REDIS_URL
+PRODUCTION_REDIS_URL
+{{/if}}
+
+# Notifications
+SLACK_WEBHOOK
+
+# Monitoring
+SENTRY_AUTH_TOKEN
+SENTRY_ORG
+SENTRY_PROJECT
+```
+
+---
+
+## Security Checklist
+
+Before going to production:
+
+- [ ] All secrets properly set and secured
+- [ ] HTTPS enabled and enforced
+- [ ] Security headers configured
+- [ ] CORS properly configured
+- [ ] Rate limiting enabled
+- [ ] Database backups automated
+- [ ] Monitoring and alerting set up
+- [ ] OAuth redirect URIs updated
+- [ ] Webhook secrets rotated
+- [ ] Environment variables not committed to Git
+- [ ] Dependencies updated and audited
+- [ ] Error tracking configured
+- [ ] API routes protected with authentication
+- [ ] Input validation on all forms
+- [ ] SQL injection protection verified
+- [ ] XSS protection enabled
+
+---
+
+## Performance Optimization
+
+- [ ] Enable caching (Redis recommended)
+- [ ] Optimize images (use Next.js Image component)
+- [ ] Enable compression
+- [ ] Minimize JavaScript bundle size
+- [ ] Use ISR or SSG where possible
+- [ ] Configure CDN (automatic with Vercel)
+- [ ] Database query optimization
+- [ ] Connection pooling enabled
+- [ ] Lazy load components
+- [ ] Implement pagination for large lists
+
+---
+
+## Scaling Considerations
+
+As your application grows:
+
+1. **Horizontal Scaling**: Add more instances
+   - Vercel: Automatic with Pro plan
+   - Kubernetes: Adjust HPA settings
+   - Docker: Use container orchestration
+
+2. **Database Scaling**:
+   - Connection pooling
+   - Read replicas
+   - Caching layer
+
+3. **Caching Strategy**:
+   - Redis for session storage
+   - CDN for static assets
+   - API response caching
+
+4. **Background Jobs**:
+   - Use queue system (BullMQ, pg-boss)
+   - Separate worker processes
+   - Cron jobs for scheduled tasks
+
+---
+
+## Backup & Disaster Recovery
+
+### Database Backups
+
+```bash
+# Automated daily backups (recommended)
+# Most managed databases include automatic backups
+
+# Manual backup
+pg_dump $DATABASE_URL > backup_$(date +%Y%m%d).sql
+
+# Restore
+psql $DATABASE_URL < backup_20240101.sql
+```
+
+### Application Backups
+
+- Git repository is your source of truth
+- Tag releases: `git tag v1.0.0`
+- Keep deployment history in platform dashboard
+
+---
+
+## Support
+
+For additional help:
+
+- 📚 [Next.js Documentation](https://nextjs.org/docs)
+- 🔐 [NextAuth.js Documentation](https://next-auth.js.org)
+{{#if database.prisma}}
+- 🗄️ [Prisma Documentation](https://www.prisma.io/docs)
+{{/if}}
+{{#if payments.stripe}}
+- 💳 [Stripe Documentation](https://stripe.com/docs)
+{{/if}}
+- 🚀 Platform-specific documentation for your chosen deployment platform
+
+---
+
+**Happy Deploying! 🚀**

@@ -1,0 +1,127 @@
+#!/bin/bash
+
+# Environment setup script for {{projectName}}
+# This script helps you set up environment variables for deployment
+
+set -e
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo ""
+echo "╔═══════════════════════════════════════════╗"
+echo "║  {{projectName}} Environment Setup       ║"
+echo "╚═══════════════════════════════════════════╝"
+echo ""
+
+# Function to generate random secret
+generate_secret() {
+    openssl rand -base64 32
+}
+
+# Create .env.production file
+cat > .env.production << EOF
+# ==================================
+# Application Configuration
+# ==================================
+NODE_ENV=production
+NEXT_PUBLIC_APP_URL=https://yourdomain.com
+APP_VERSION=1.0.0
+
+# ==================================
+# Database
+# ==================================
+DATABASE_URL=postgresql://user:password@host:5432/database?schema=public
+
+{{#if features.redis}}
+# ==================================
+# Redis
+# ==================================
+REDIS_URL=redis://host:6379
+{{/if}}
+
+# ==================================
+# Authentication
+# ==================================
+NEXTAUTH_SECRET=$(generate_secret)
+NEXTAUTH_URL=https://yourdomain.com
+
+{{#if auth.github}}
+# ==================================
+# GitHub OAuth
+# ==================================
+GITHUB_ID=your-github-client-id
+GITHUB_SECRET=your-github-client-secret
+{{/if}}
+
+{{#if auth.google}}
+# ==================================
+# Google OAuth
+# ==================================
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+{{/if}}
+
+{{#if payments.stripe}}
+# ==================================
+# Stripe
+# ==================================
+STRIPE_SECRET_KEY=sk_live_your-stripe-secret-key
+STRIPE_PUBLISHABLE_KEY=pk_live_your-stripe-publishable-key
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_your-stripe-publishable-key
+STRIPE_WEBHOOK_SECRET=whsec_your-webhook-secret
+{{/if}}
+
+{{#if email.resend}}
+# ==================================
+# Email - Resend
+# ==================================
+RESEND_API_KEY=re_your-resend-api-key
+EMAIL_FROM=noreply@yourdomain.com
+{{/if}}
+
+{{#if email.sendgrid}}
+# ==================================
+# Email - SendGrid
+# ==================================
+SENDGRID_API_KEY=SG.your-sendgrid-api-key
+EMAIL_FROM=noreply@yourdomain.com
+{{/if}}
+
+# ==================================
+# Monitoring
+# ==================================
+NEXT_TELEMETRY_DISABLED=1
+EOF
+
+echo -e "${GREEN}✓${NC} Created .env.production file"
+echo ""
+echo -e "${YELLOW}⚠${NC}  IMPORTANT: Edit .env.production and replace placeholder values!"
+echo -e "${YELLOW}⚠${NC}  NEXTAUTH_SECRET has been auto-generated"
+echo ""
+echo "Next steps:"
+echo "1. Edit .env.production with your actual values"
+echo "2. Never commit .env.production to Git!"
+echo "3. Set up environment variables in your deployment platform"
+echo ""
+
+# Platform-specific instructions
+echo "Platform-specific setup:"
+echo ""
+echo "Vercel:"
+echo "  vercel env pull .env.production.local"
+echo "  # Or set in dashboard: Settings → Environment Variables"
+echo ""
+echo "Railway:"
+echo "  railway variables set KEY=VALUE"
+echo "  # Or use: railway variables"
+echo ""
+echo "Fly.io:"
+echo "  flyctl secrets set KEY=VALUE"
+echo "  # Or use: flyctl secrets import < .env.production"
+echo ""
+echo "Kubernetes:"
+echo "  kubectl create secret generic {{projectName}}-secrets --from-env-file=.env.production -n {{projectName}}"
+echo ""

@@ -1,0 +1,138 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{projectName}}
+  labels:
+    app: {{projectName}}
+  annotations:
+    # Nginx Ingress Controller
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "8k"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+
+    # Rate Limiting
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
+
+    # Security Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: camera=(), microphone=(), geolocation=()";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains";
+
+    # CORS (optional)
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://{{domain}}"
+
+    # SSL/TLS
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # Redirect www to non-www
+    nginx.ingress.kubernetes.io/from-to-www-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - {{domain}}
+    - www.{{domain}}
+    secretName: {{projectName}}-tls
+  rules:
+  - host: {{domain}}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{projectName}}
+            port:
+              number: 80
+  - host: www.{{domain}}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{projectName}}
+            port:
+              number: 80
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{projectName}}-cert
+  labels:
+    app: {{projectName}}
+spec:
+  secretName: {{projectName}}-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - {{domain}}
+  - www.{{domain}}
+---
+# Network Policy for additional security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{projectName}}
+  labels:
+    app: {{projectName}}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{projectName}}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 3000
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow database access
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  {{#if features.redis}}
+  # Allow Redis access
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  {{/if}}
+  # Allow external HTTPS
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443

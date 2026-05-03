@@ -1,0 +1,85 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { stripe, PRICING_PLANS } from '@/lib/stripe';
+import { db } from '@/lib/db';
+
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const { priceId, plan } = await req.json();
+
+    if (!priceId || !plan) {
+      return NextResponse.json(
+        { error: 'Missing priceId or plan' },
+        { status: 400 }
+      );
+    }
+
+    // Get or create Stripe customer
+    let customer;
+    const user = await db.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, stripeCustomerId: true }
+    });
+
+    if (user?.stripeCustomerId) {
+      customer = await stripe.customers.retrieve(user.stripeCustomerId);
+    } else {
+      customer = await stripe.customers.create({
+        email: session.user.email,
+        name: session.user.name || undefined,
+        metadata: {
+          userId: user?.id || ''
+        }
+      });
+
+      // Save Stripe customer ID
+      await db.user.update({
+        where: { email: session.user.email },
+        data: { stripeCustomerId: customer.id }
+      });
+    }
+
+    // Create Stripe checkout session
+    const checkoutSession = await stripe.checkout.sessions.create({
+      customer: customer.id,
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1
+        }
+      ],
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing?canceled=true`,
+      metadata: {
+        userId: user?.id || '',
+        plan
+      },
+      subscription_data: {
+        metadata: {
+          userId: user?.id || '',
+          plan
+        }
+      }
+    });
+
+    return NextResponse.json({ url: checkoutSession.url });
+  } catch (error) {
+    console.error('Checkout error:', error);
+    return NextResponse.json(
+      { error: 'Failed to create checkout session' },
+      { status: 500 }
+    );
+  }
+}

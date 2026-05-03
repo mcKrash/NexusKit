@@ -1,0 +1,249 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{projectName}}
+  labels:
+    app: {{projectName}}
+    version: v1
+spec:
+  replicas: 3
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: {{projectName}}
+  template:
+    metadata:
+      labels:
+        app: {{projectName}}
+        version: v1
+    spec:
+      serviceAccountName: {{projectName}}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: {{projectName}}
+        image: {{dockerImage}}:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: database-url
+        {{#if features.redis}}
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: redis-url
+        {{/if}}
+        - name: NEXTAUTH_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{projectName}}-config
+              key: nextauth-url
+        - name: NEXTAUTH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: nextauth-secret
+        {{#if auth.github}}
+        - name: GITHUB_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: github-id
+        - name: GITHUB_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: github-secret
+        {{/if}}
+        {{#if auth.google}}
+        - name: GOOGLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: google-client-id
+        - name: GOOGLE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: google-client-secret
+        {{/if}}
+        {{#if payments.stripe}}
+        - name: STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: stripe-secret-key
+        - name: STRIPE_PUBLISHABLE_KEY
+          valueFrom:
+            configMapKeyRef:
+              name: {{projectName}}-config
+              key: stripe-publishable-key
+        - name: STRIPE_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: stripe-webhook-secret
+        {{/if}}
+        {{#if email.resend}}
+        - name: RESEND_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: resend-api-key
+        {{/if}}
+        {{#if email.sendgrid}}
+        - name: SENDGRID_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{projectName}}-secrets
+              key: sendgrid-api-key
+        {{/if}}
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /app/.next/cache
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+      nodeSelector:
+        kubernetes.io/os: linux
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{projectName}}
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{projectName}}
+  labels:
+    app: {{projectName}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{projectName}}-config
+  labels:
+    app: {{projectName}}
+data:
+  nextauth-url: "https://{{domain}}"
+  {{#if payments.stripe}}
+  stripe-publishable-key: "{{stripePublishableKey}}"
+  {{/if}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{projectName}}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: {{projectName}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{projectName}}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{projectName}}
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 15
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 2
+        periodSeconds: 15
+      selectPolicy: Max

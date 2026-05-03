@@ -1,0 +1,54 @@
+import Stripe from 'stripe';
+
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('STRIPE_SECRET_KEY is not defined in environment variables');
+}
+
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2024-04-10',
+  typescript: true,
+});
+
+// Pricing plans configuration
+export const PRICING_PLANS = {
+  free: {
+    name: 'Free',
+    price: 0,
+    priceId: null,
+    features: [
+      'Basic features',
+      'Up to 10 projects',
+      'Community support',
+      '1 GB storage'
+    ]
+  },
+  pro: {
+    name: 'Pro',
+    price: 29,
+    priceId: process.env.STRIPE_PRO_PRICE_ID,
+    features: [
+      'All Free features',
+      'Unlimited projects',
+      'Priority support',
+      '50 GB storage',
+      'Advanced analytics',
+      'Custom domain'
+    ]
+  },
+  enterprise: {
+    name: 'Enterprise',
+    price: 99,
+    priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID,
+    features: [
+      'All Pro features',
+      'Dedicated support',
+      'SSO & SAML',
+      'Unlimited storage',
+      'Advanced security',
+      'Custom integrations',
+      'SLA guarantee'
+    ]
+  }
+} as const;
+
+export type PricingPlan = keyof typeof PRICING_PLANS;

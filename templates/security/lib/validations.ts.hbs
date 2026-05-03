@@ -1,0 +1,485 @@
+import { z } from 'zod';
+import validator from 'validator';
+import DOMPurify from 'isomorphic-dompurify';
+
+// ============================================================================
+// Common Validation Schemas
+// ============================================================================
+
+/**
+ * Email validation schema
+ */
+export const emailSchema = z
+  .string()
+  .trim()
+  .min(1, 'Email is required')
+  .email('Invalid email address')
+  .max(255, 'Email is too long')
+  .toLowerCase()
+  .refine((email) => validator.isEmail(email), {
+    message: 'Invalid email format',
+  });
+
+/**
+ * Password validation schema with strength requirements
+ */
+export const passwordSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(128, 'Password is too long')
+  .refine((password) => /[a-z]/.test(password), {
+    message: 'Password must contain at least one lowercase letter',
+  })
+  .refine((password) => /[A-Z]/.test(password), {
+    message: 'Password must contain at least one uppercase letter',
+  })
+  .refine((password) => /[0-9]/.test(password), {
+    message: 'Password must contain at least one number',
+  })
+  .refine((password) => /[^a-zA-Z0-9]/.test(password), {
+    message: 'Password must contain at least one special character',
+  })
+  .refine((password) => !validator.isCommonPassword(password), {
+    message: 'Password is too common. Please choose a stronger password',
+  });
+
+/**
+ * Strong password schema (more strict)
+ */
+export const strongPasswordSchema = passwordSchema
+  .min(12, 'Password must be at least 12 characters')
+  .refine((password) => {
+    const strength = calculatePasswordStrength(password);
+    return strength >= 3; // Require at least "strong" rating
+  }, {
+    message: 'Password is not strong enough',
+  });
+
+/**
+ * Username validation schema
+ */
+export const usernameSchema = z
+  .string()
+  .trim()
+  .min(3, 'Username must be at least 3 characters')
+  .max(30, 'Username must be at most 30 characters')
+  .regex(/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscores, and hyphens')
+  .refine((username) => !validator.contains(username.toLowerCase(), 'admin'), {
+    message: 'Username cannot contain reserved words',
+  });
+
+/**
+ * Name validation schema
+ */
+export const nameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Name is required')
+  .max(100, 'Name is too long')
+  .regex(/^[a-zA-Z\s'-]+$/, 'Name can only contain letters, spaces, hyphens, and apostrophes');
+
+/**
+ * URL validation schema
+ */
+export const urlSchema = z
+  .string()
+  .trim()
+  .min(1, 'URL is required')
+  .refine((url) => validator.isURL(url, {
+    protocols: ['http', 'https'],
+    require_protocol: true,
+  }), {
+    message: 'Invalid URL format',
+  });
+
+/**
+ * Phone number validation schema
+ */
+export const phoneSchema = z
+  .string()
+  .trim()
+  .refine((phone) => validator.isMobilePhone(phone, 'any'), {
+    message: 'Invalid phone number',
+  });
+
+/**
+ * UUID validation schema
+ */
+export const uuidSchema = z
+  .string()
+  .uuid('Invalid UUID format');
+
+/**
+ * Date validation schema
+ */
+export const dateSchema = z
+  .string()
+  .refine((date) => validator.isISO8601(date), {
+    message: 'Invalid date format. Use ISO 8601 format',
+  })
+  .transform((date) => new Date(date));
+
+/**
+ * Slug validation schema
+ */
+export const slugSchema = z
+  .string()
+  .trim()
+  .min(1, 'Slug is required')
+  .max(100, 'Slug is too long')
+  .regex(/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens')
+  .refine((slug) => !slug.startsWith('-') && !slug.endsWith('-'), {
+    message: 'Slug cannot start or end with a hyphen',
+  });
+
+/**
+ * Hex color validation schema
+ */
+export const hexColorSchema = z
+  .string()
+  .regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color format');
+
+/**
+ * Credit card validation schema
+ */
+export const creditCardSchema = z
+  .string()
+  .refine((card) => validator.isCreditCard(card), {
+    message: 'Invalid credit card number',
+  });
+
+// ============================================================================
+// Authentication & User Schemas
+// ============================================================================
+
+/**
+ * Sign up validation schema
+ */
+export const signUpSchema = z.object({
+  email: emailSchema,
+  password: passwordSchema,
+  name: nameSchema.optional(),
+  username: usernameSchema.optional(),
+});
+
+/**
+ * Sign in validation schema
+ */
+export const signInSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1, 'Password is required'),
+});
+
+/**
+ * Password reset request schema
+ */
+export const passwordResetRequestSchema = z.object({
+  email: emailSchema,
+});
+
+/**
+ * Password reset schema
+ */
+export const passwordResetSchema = z.object({
+  token: z.string().min(1, 'Reset token is required'),
+  password: passwordSchema,
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ['confirmPassword'],
+});
+
+/**
+ * Change password schema
+ */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: passwordSchema,
+  confirmPassword: z.string(),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ['confirmPassword'],
+}).refine((data) => data.currentPassword !== data.newPassword, {
+  message: 'New password must be different from current password',
+  path: ['newPassword'],
+});
+
+/**
+ * Update profile schema
+ */
+export const updateProfileSchema = z.object({
+  name: nameSchema.optional(),
+  username: usernameSchema.optional(),
+  email: emailSchema.optional(),
+  phone: phoneSchema.optional(),
+  bio: z.string().max(500, 'Bio is too long').optional(),
+  website: urlSchema.optional(),
+  avatar: urlSchema.optional(),
+});
+
+// ============================================================================
+// Pagination & Filtering Schemas
+// ============================================================================
+
+/**
+ * Pagination schema
+ */
+export const paginationSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(10),
+  sortBy: z.string().optional(),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+/**
+ * Search schema
+ */
+export const searchSchema = z.object({
+  query: z.string().min(1, 'Search query is required').max(100, 'Search query is too long'),
+  ...paginationSchema.shape,
+});
+
+// ============================================================================
+// Sanitization Functions
+// ============================================================================
+
+/**
+ * Sanitize HTML content
+ */
+export function sanitizeHtml(html: string, options?: DOMPurify.Config): string {
+  const defaultOptions: DOMPurify.Config = {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'code', 'pre'],
+    ALLOWED_ATTR: ['href', 'target', 'rel'],
+    ALLOW_DATA_ATTR: false,
+  };
+
+  return DOMPurify.sanitize(html, { ...defaultOptions, ...options });
+}
+
+/**
+ * Sanitize string (remove special characters)
+ */
+export function sanitizeString(str: string): string {
+  return validator.escape(str.trim());
+}
+
+/**
+ * Strip HTML tags
+ */
+export function stripHtml(html: string): string {
+  return validator.stripLow(html.replace(/<[^>]*>/g, ''));
+}
+
+/**
+ * Normalize email
+ */
+export function normalizeEmail(email: string): string {
+  return validator.normalizeEmail(email.toLowerCase().trim()) || email;
+}
+
+/**
+ * Create slug from string
+ */
+export function createSlug(str: string): string {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Sanitize filename
+ */
+export function sanitizeFilename(filename: string): string {
+  return filename
+    .replace(/[^a-zA-Z0-9.-]/g, '_')
+    .replace(/_{2,}/g, '_')
+    .substring(0, 255);
+}
+
+// ============================================================================
+// Password Strength Checker
+// ============================================================================
+
+/**
+ * Calculate password strength (0-4)
+ * 0: Very Weak
+ * 1: Weak
+ * 2: Fair
+ * 3: Strong
+ * 4: Very Strong
+ */
+export function calculatePasswordStrength(password: string): number {
+  let strength = 0;
+
+  // Length check
+  if (password.length >= 8) strength++;
+  if (password.length >= 12) strength++;
+
+  // Character variety checks
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
+  if (/[0-9]/.test(password)) strength++;
+  if (/[^a-zA-Z0-9]/.test(password)) strength++;
+
+  // Complexity checks
+  if (password.length >= 16 && strength >= 3) strength++;
+
+  // Common password check
+  if (validator.isCommonPassword(password)) {
+    strength = Math.max(0, strength - 2);
+  }
+
+  return Math.min(4, strength);
+}
+
+/**
+ * Get password strength label
+ */
+export function getPasswordStrengthLabel(password: string): string {
+  const strength = calculatePasswordStrength(password);
+  const labels = ['Very Weak', 'Weak', 'Fair', 'Strong', 'Very Strong'];
+  return labels[strength];
+}
+
+// ============================================================================
+// Validation Utilities
+// ============================================================================
+
+/**
+ * Validate and parse data with Zod schema
+ */
+export async function validateData<T>(
+  schema: z.Schema<T>,
+  data: unknown
+): Promise<{ success: true; data: T } | { success: false; errors: z.ZodError }> {
+  try {
+    const validData = await schema.parseAsync(data);
+    return { success: true, data: validData };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return { success: false, errors: error };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Format Zod errors for API response
+ */
+export function formatZodErrors(error: z.ZodError): Record<string, string[]> {
+  const formatted: Record<string, string[]> = {};
+
+  error.errors.forEach((err) => {
+    const path = err.path.join('.');
+    if (!formatted[path]) {
+      formatted[path] = [];
+    }
+    formatted[path].push(err.message);
+  });
+
+  return formatted;
+}
+
+/**
+ * Validate file upload
+ */
+export function validateFileUpload(
+  file: Express.Multer.File,
+  options: {
+    maxSize?: number; // in bytes
+    allowedTypes?: string[];
+    allowedExtensions?: string[];
+  } = {}
+): { valid: boolean; error?: string } {
+  const {
+    maxSize = 5 * 1024 * 1024, // 5MB default
+    allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+    allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
+  } = options;
+
+  // Check file size
+  if (file.size > maxSize) {
+    return {
+      valid: false,
+      error: `File size exceeds ${maxSize / (1024 * 1024)}MB limit`,
+    };
+  }
+
+  // Check MIME type
+  if (!allowedTypes.includes(file.mimetype)) {
+    return {
+      valid: false,
+      error: `File type ${file.mimetype} is not allowed`,
+    };
+  }
+
+  // Check file extension
+  const ext = file.originalname.toLowerCase().slice(file.originalname.lastIndexOf('.'));
+  if (!allowedExtensions.includes(ext)) {
+    return {
+      valid: false,
+      error: `File extension ${ext} is not allowed`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Check if value is safe for SQL (basic check)
+ */
+export function isSafeSqlValue(value: string): boolean {
+  // Check for common SQL injection patterns
+  const dangerousPatterns = [
+    /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
+    /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i,
+    /\w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))/i,
+    /((\%27)|(\'))union/i,
+  ];
+
+  return !dangerousPatterns.some(pattern => pattern.test(value));
+}
+
+export default {
+  // Schemas
+  emailSchema,
+  passwordSchema,
+  strongPasswordSchema,
+  usernameSchema,
+  nameSchema,
+  urlSchema,
+  phoneSchema,
+  uuidSchema,
+  dateSchema,
+  slugSchema,
+  hexColorSchema,
+  creditCardSchema,
+  signUpSchema,
+  signInSchema,
+  passwordResetRequestSchema,
+  passwordResetSchema,
+  changePasswordSchema,
+  updateProfileSchema,
+  paginationSchema,
+  searchSchema,
+
+  // Sanitization
+  sanitizeHtml,
+  sanitizeString,
+  stripHtml,
+  normalizeEmail,
+  createSlug,
+  sanitizeFilename,
+
+  // Password
+  calculatePasswordStrength,
+  getPasswordStrengthLabel,
+
+  // Utilities
+  validateData,
+  formatZodErrors,
+  validateFileUpload,
+  isSafeSqlValue,
+};

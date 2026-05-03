@@ -1,0 +1,136 @@
+{
+  "buildCommand": "pnpm build",
+  "devCommand": "pnpm dev",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "outputDirectory": ".next",
+  "env": {
+    "DATABASE_URL": "@database_url",
+    {{#if features.redis}}
+    "REDIS_URL": "@redis_url",
+    {{/if}}
+    "NEXTAUTH_URL": "@nextauth_url",
+    "NEXTAUTH_SECRET": "@nextauth_secret",
+    {{#if auth.github}}
+    "GITHUB_ID": "@github_id",
+    "GITHUB_SECRET": "@github_secret",
+    {{/if}}
+    {{#if auth.google}}
+    "GOOGLE_CLIENT_ID": "@google_client_id",
+    "GOOGLE_CLIENT_SECRET": "@google_client_secret",
+    {{/if}}
+    {{#if payments.stripe}}
+    "STRIPE_SECRET_KEY": "@stripe_secret_key",
+    "STRIPE_PUBLISHABLE_KEY": "@stripe_publishable_key",
+    "STRIPE_WEBHOOK_SECRET": "@stripe_webhook_secret",
+    {{/if}}
+    {{#if email.resend}}
+    "RESEND_API_KEY": "@resend_api_key",
+    {{/if}}
+    {{#if email.sendgrid}}
+    "SENDGRID_API_KEY": "@sendgrid_api_key",
+    {{/if}}
+    "NEXT_PUBLIC_APP_URL": "@next_public_app_url"
+  },
+  "build": {
+    "env": {
+      "SKIP_ENV_VALIDATION": "1"
+    }
+  },
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 30,
+      "memory": 1024
+    },
+    {{#if payments.stripe}}
+    "app/api/webhooks/stripe/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    {{/if}}
+    "app/api/cron/**/*.ts": {
+      "maxDuration": 300,
+      "memory": 3008
+    }
+  },
+  "regions": ["{{region}}"],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Credentials",
+          "value": "true"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/:path*"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/home",
+      "destination": "/",
+      "permanent": true
+    }
+  ],
+  "trailingSlash": false,
+  "cleanUrls": true,
+  "crons": [
+    {{#if features.cron}}
+    {
+      "path": "/api/cron/cleanup",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/backup",
+      "schedule": "0 0 * * *"
+    }
+    {{/if}}
+  ]
+}

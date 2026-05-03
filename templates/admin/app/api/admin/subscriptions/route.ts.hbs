@@ -1,0 +1,196 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+
+// GET - List all subscriptions
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    // Check authentication
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Check admin role
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+
+    // Build where clause
+    const where: any = {};
+    if (status && status !== 'all') {
+      where.status = status.toUpperCase();
+    }
+
+    // Fetch subscriptions
+    const subscriptions = await prisma.subscription.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return NextResponse.json({
+      subscriptions,
+      total: subscriptions.length,
+    });
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH - Update subscription
+export async function PATCH(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    // Check authentication
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Check admin role
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const { subscriptionId, updates } = body;
+
+    if (!subscriptionId) {
+      return NextResponse.json(
+        { error: 'Subscription ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate allowed fields
+    const allowedFields = ['status', 'plan', 'cancelAtPeriodEnd'];
+    const updateData: any = {};
+
+    for (const field of allowedFields) {
+      if (field in updates) {
+        updateData[field] = updates[field];
+      }
+    }
+
+    // Update subscription
+    const updatedSubscription = await prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: updateData,
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json({
+      message: 'Subscription updated successfully',
+      subscription: updatedSubscription,
+    });
+  } catch (error) {
+    console.error('Error updating subscription:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Cancel subscription
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    // Check authentication
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Check admin role
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const { subscriptionId, immediately } = body;
+
+    if (!subscriptionId) {
+      return NextResponse.json(
+        { error: 'Subscription ID is required' },
+        { status: 400 }
+      );
+    }
+
+    if (immediately) {
+      // Cancel immediately
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: {
+          status: 'CANCELED',
+          cancelAtPeriodEnd: false,
+        },
+      });
+    } else {
+      // Cancel at period end
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: {
+          cancelAtPeriodEnd: true,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      message: immediately
+        ? 'Subscription canceled immediately'
+        : 'Subscription will be canceled at period end',
+    });
+  } catch (error) {
+    console.error('Error canceling subscription:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}

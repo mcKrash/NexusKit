@@ -1,0 +1,202 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+
+// Helper function to get date range
+function getDateRange(timeRange: string) {
+  const now = new Date();
+  const ranges: Record<string, Date> = {
+    '7d': new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+    '30d': new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+    '90d': new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000),
+    '1y': new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000),
+  };
+  return ranges[timeRange] || ranges['30d'];
+}
+
+// GET - Get admin statistics
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    // Check authentication
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Check admin role
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden - Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const timeRange = searchParams.get('timeRange') || '30d';
+    const type = searchParams.get('type') || 'general';
+
+    const startDate = getDateRange(timeRange);
+
+    if (type === 'subscriptions') {
+      // Subscription-specific stats
+      const [subscriptions, planDistribution] = await Promise.all([
+        prisma.subscription.findMany({
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        }),
+        prisma.subscription.groupBy({
+          by: ['plan'],
+          where: {
+            status: 'ACTIVE',
+          },
+          _count: true,
+        }),
+      ]);
+
+      const activeSubscriptions = subscriptions.filter(s => s.status === 'ACTIVE');
+      const totalRevenue = activeSubscriptions.length * 29; // Mock calculation
+
+      // Calculate churn (mock data)
+      const churnRate = 2.5;
+      const avgLifetimeValue = 348; // Mock value
+
+      // Plan distribution with revenue
+      const planDist = planDistribution.map(p => ({
+        plan: p.plan,
+        count: p._count,
+        revenue: p._count * 29, // Mock calculation based on plan
+      }));
+
+      // Churn analysis (mock data for last 6 months)
+      const churnAnalysis = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'].map(month => ({
+        month,
+        churned: Math.floor(Math.random() * 10) + 2,
+        retained: Math.floor(Math.random() * 50) + 100,
+      }));
+
+      return NextResponse.json({
+        totalActive: activeSubscriptions.length,
+        totalRevenue,
+        churnRate,
+        avgLifetimeValue,
+        planDistribution: planDist,
+        churnAnalysis,
+        subscriptions,
+      });
+    }
+
+    // General analytics stats
+    const [
+      totalUsers,
+      recentUsers,
+      activeSubscriptions,
+      subscriptionsByPlan,
+    ] = await Promise.all([
+      // Total users
+      prisma.user.count(),
+
+      // Recent users for growth chart
+      prisma.user.findMany({
+        where: {
+          createdAt: {
+            gte: startDate,
+          },
+        },
+        select: {
+          createdAt: true,
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      }),
+
+      // Active subscriptions
+      prisma.subscription.count({
+        where: {
+          status: 'ACTIVE',
+        },
+      }),
+
+      // Subscriptions by plan
+      prisma.subscription.groupBy({
+        by: ['plan'],
+        where: {
+          status: 'ACTIVE',
+        },
+        _count: true,
+      }),
+    ]);
+
+    // Process user growth data
+    const userGrowthMap = new Map<string, number>();
+    recentUsers.forEach(user => {
+      const date = new Date(user.createdAt).toISOString().split('T')[0];
+      userGrowthMap.set(date, (userGrowthMap.get(date) || 0) + 1);
+    });
+
+    const userGrowth = Array.from(userGrowthMap.entries())
+      .map(([date, count]) => ({
+        date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        users: count,
+      }))
+      .slice(-30); // Last 30 data points
+
+    // Revenue by plan
+    const revenueByPlan = subscriptionsByPlan.map(p => ({
+      plan: p.plan,
+      revenue: p._count * 29, // Mock calculation
+      count: p._count,
+    }));
+
+    // Conversion funnel (mock data)
+    const totalVisitors = totalUsers * 10; // Mock: assume 10x visitors
+    const conversionFunnel = [
+      { stage: 'Visitors', count: totalVisitors, rate: 100 },
+      { stage: 'Signups', count: totalUsers, rate: (totalUsers / totalVisitors) * 100 },
+      { stage: 'Trial Started', count: Math.floor(totalUsers * 0.6), rate: 60 },
+      { stage: 'Paid Conversion', count: activeSubscriptions, rate: (activeSubscriptions / totalUsers) * 100 },
+    ];
+
+    // Retention metrics (mock data)
+    const retentionMetrics = {
+      day7: 75.5,
+      day30: 62.3,
+      day90: 48.7,
+    };
+
+    // Summary metrics
+    const totalRevenue = activeSubscriptions * 29; // Mock calculation
+    const avgRevenuePerUser = totalUsers > 0 ? totalRevenue / totalUsers : 0;
+    const conversionRate = totalUsers > 0 ? (activeSubscriptions / totalUsers) * 100 : 0;
+
+    return NextResponse.json({
+      userGrowth,
+      revenueByPlan,
+      conversionFunnel,
+      retentionMetrics,
+      summary: {
+        totalRevenue,
+        avgRevenuePerUser,
+        conversionRate,
+        activeUsers: totalUsers,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}

@@ -1,0 +1,218 @@
+# Security Module - Quick Start Guide
+
+## Installation
+
+```bash
+npm install express zod validator isomorphic-dompurify ioredis bcryptjs cookie-parser express-session connect-redis
+npm install -D @types/express @types/validator @types/bcryptjs @types/cookie-parser @types/express-session
+```
+
+## Basic Setup (2 minutes)
+
+### 1. Environment Variables
+
+Create `.env`:
+
+```bash
+NODE_ENV=production
+REDIS_URL=redis://localhost:6379
+SESSION_SECRET=your-secret-here
+ALLOWED_ORIGINS=https://yourdomain.com
+```
+
+### 2. Initialize Security
+
+```typescript
+import express from 'express';
+import { productionSecurity } from './security';
+
+const app = express();
+
+app.use(express.json());
+
+// One line to enable all security features
+productionSecurity(app, process.env.REDIS_URL);
+
+app.listen(3000);
+```
+
+That's it! You now have:
+- ✅ Rate limiting
+- ✅ CORS protection
+- ✅ Security headers
+- ✅ CSRF protection
+- ✅ Input validation ready
+
+## Common Use Cases
+
+### Protect Authentication Endpoints
+
+```typescript
+import { createRateLimiter } from './security';
+
+app.post('/api/auth/login',
+  createRateLimiter('auth'), // 5 requests per 15 minutes
+  loginHandler
+);
+```
+
+### Validate User Input
+
+```typescript
+import { validateData, signUpSchema } from './security';
+
+app.post('/api/signup', async (req, res) => {
+  const result = await validateData(signUpSchema, req.body);
+
+  if (!result.success) {
+    return res.status(400).json({ errors: result.errors });
+  }
+
+  // Use result.data safely
+});
+```
+
+### Sanitize HTML Content
+
+```typescript
+import { sanitizeHtml } from './security';
+
+app.post('/api/post', (req, res) => {
+  const safeContent = sanitizeHtml(req.body.content);
+  // Save safeContent to database
+});
+```
+
+### Protect API with API Keys
+
+```typescript
+import { apiKeyAuth, requireScope } from './security';
+
+app.get('/api/data',
+  apiKeyAuth(),
+  requireScope('data:read'),
+  dataHandler
+);
+```
+
+### Add CSRF to Forms
+
+```ejs
+<form method="POST" action="/api/update">
+  <input type="hidden" name="csrf_token" value="<%= csrfToken %>">
+  <!-- form fields -->
+</form>
+```
+
+## Quick Commands
+
+```bash
+# Generate secure secret
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# Generate API key
+node -e "const crypto = require('crypto'); console.log('sk_' + crypto.randomBytes(32).toString('base64url'))"
+
+# Check security headers
+curl -I https://your-domain.com
+
+# Test rate limiting
+for i in {1..10}; do curl http://localhost:3000/api/endpoint; done
+
+# Audit dependencies
+npm audit
+```
+
+## Environment Presets
+
+### Development
+
+```typescript
+import { devSecurity } from './security';
+devSecurity(app);
+```
+
+### Production
+
+```typescript
+import { productionSecurity } from './security';
+productionSecurity(app, process.env.REDIS_URL);
+```
+
+### API Only
+
+```typescript
+import { apiSecurity } from './security';
+apiSecurity(app, ['https://app.example.com']);
+```
+
+## Next Steps
+
+1. Read [SECURITY.md](./SECURITY.md) for comprehensive documentation
+2. Review [examples/express-app.ts](./examples/express-app.ts) for full example
+3. Customize [config/security.config.ts](./config/security.config.ts) for your needs
+4. Run tests: `npm test`
+5. Check security: `npm audit`
+
+## Troubleshooting
+
+### CSRF Token Missing
+
+Make sure you have both middleware:
+
+```typescript
+app.use(csrfToken()); // Generate tokens
+app.use(csrf());      // Validate tokens
+```
+
+### Rate Limit Not Working
+
+Check Redis connection:
+
+```typescript
+import { initializeRedis } from './security';
+initializeRedis(process.env.REDIS_URL);
+```
+
+### CORS Error
+
+Add your domain to allowed origins:
+
+```bash
+ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+```
+
+### Password Validation Too Strict
+
+Use `passwordSchema` instead of `strongPasswordSchema`:
+
+```typescript
+import { passwordSchema } from './security';
+// Requires 8+ chars instead of 12+
+```
+
+## Support
+
+- Documentation: [SECURITY.md](./SECURITY.md)
+- Examples: [examples/](./examples/)
+- Tests: [__tests__/](./__tests__/)
+- Issues: Create an issue on GitHub
+
+## Security Checklist
+
+Before deploying:
+
+- [ ] Change all secrets in `.env`
+- [ ] Enable HTTPS
+- [ ] Set `NODE_ENV=production`
+- [ ] Configure CORS with specific origins
+- [ ] Enable Redis for rate limiting
+- [ ] Test all validation schemas
+- [ ] Run `npm audit`
+- [ ] Test security headers at https://securityheaders.com
+- [ ] Set up monitoring and alerts
+- [ ] Review error handling
+
+## License
+
+MIT

@@ -1,0 +1,225 @@
+import { Suspense } from 'react';
+import MetricCard from '@/components/admin/MetricCard';
+import RevenueChart from '@/components/admin/RevenueChart';
+import { prisma } from '@/lib/prisma';
+import {
+  Users,
+  DollarSign,
+  TrendingUp,
+  AlertCircle,
+  Activity
+} from 'lucide-react';
+
+async function getAdminStats() {
+  const [
+    totalUsers,
+    activeSubscriptions,
+    totalRevenue,
+    recentSignups,
+    recentSubscriptions,
+  ] = await Promise.all([
+    // Total users
+    prisma.user.count(),
+
+    // Active subscriptions
+    prisma.subscription.count({
+      where: {
+        status: 'ACTIVE',
+      },
+    }),
+
+    // Total revenue (mock calculation - adjust based on your pricing)
+    prisma.subscription.count({
+      where: { status: 'ACTIVE' },
+    }).then(count => count * 29), // Assuming average $29/month
+
+    // Recent signups (last 7 days)
+    prisma.user.findMany({
+      where: {
+        createdAt: {
+          gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+      },
+    }),
+
+    // Recent subscriptions
+    prisma.subscription.findMany({
+      where: {
+        status: 'ACTIVE',
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  // Calculate churn rate (mock - you'll need historical data)
+  const churnRate = 2.5; // 2.5% example
+
+  // Calculate MRR (Monthly Recurring Revenue)
+  const mrr = totalRevenue;
+
+  return {
+    totalUsers,
+    activeSubscriptions,
+    mrr,
+    churnRate,
+    recentSignups,
+    recentSubscriptions,
+  };
+}
+
+function StatsLoading() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-pulse">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="bg-white p-6 rounded-lg border border-gray-200 h-32" />
+      ))}
+    </div>
+  );
+}
+
+async function DashboardStats() {
+  const stats = await getAdminStats();
+
+  return (
+    <>
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <MetricCard
+          title="Total Users"
+          value={stats.totalUsers.toLocaleString()}
+          icon={Users}
+          trend="+12.5%"
+          trendUp={true}
+        />
+        <MetricCard
+          title="Monthly Recurring Revenue"
+          value={`$${stats.mrr.toLocaleString()}`}
+          icon={DollarSign}
+          trend="+8.2%"
+          trendUp={true}
+        />
+        <MetricCard
+          title="Active Subscriptions"
+          value={stats.activeSubscriptions.toLocaleString()}
+          icon={Activity}
+          trend="+5.3%"
+          trendUp={true}
+        />
+        <MetricCard
+          title="Churn Rate"
+          value={`${stats.churnRate}%`}
+          icon={AlertCircle}
+          trend="-0.5%"
+          trendUp={false}
+        />
+      </div>
+
+      {/* Revenue Chart */}
+      <div className="bg-white p-6 rounded-lg border border-gray-200 mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Revenue Overview
+        </h2>
+        <RevenueChart />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Signups */}
+        <div className="bg-white p-6 rounded-lg border border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Recent Signups
+          </h2>
+          <div className="space-y-4">
+            {stats.recentSignups.length === 0 ? (
+              <p className="text-sm text-gray-500">No recent signups</p>
+            ) : (
+              stats.recentSignups.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {user.name || 'Anonymous'}
+                    </p>
+                    <p className="text-xs text-gray-500">{user.email}</p>
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {new Date(user.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Recent Subscriptions */}
+        <div className="bg-white p-6 rounded-lg border border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Recent Subscriptions
+          </h2>
+          <div className="space-y-4">
+            {stats.recentSubscriptions.length === 0 ? (
+              <p className="text-sm text-gray-500">No recent subscriptions</p>
+            ) : (
+              stats.recentSubscriptions.map((sub) => (
+                <div
+                  key={sub.id}
+                  className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {sub.user.name || 'Anonymous'}
+                    </p>
+                    <p className="text-xs text-gray-500">{sub.user.email}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-gray-900">
+                      {sub.plan}
+                    </p>
+                    <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 rounded">
+                      {sub.status}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export default function AdminDashboardPage() {
+  return (
+    <div>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-gray-600 mt-2">
+          Overview of your SaaS metrics and recent activity
+        </p>
+      </div>
+
+      <Suspense fallback={<StatsLoading />}>
+        <DashboardStats />
+      </Suspense>
+    </div>
+  );
+}

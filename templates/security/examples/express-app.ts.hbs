@@ -1,0 +1,329 @@
+/**
+ * Example Express Application with Security
+ * This demonstrates how to use all security features together
+ */
+
+import express, { Request, Response, NextFunction } from 'express';
+import cookieParser from 'cookie-parser';
+import session from 'express-session';
+import Redis from 'ioredis';
+import RedisStore from 'connect-redis';
+
+// Import security modules
+import {
+  initializeSecurity,
+  productionSecurity,
+  devSecurity,
+  createRateLimiter,
+  validateData,
+  signUpSchema,
+  signInSchema,
+  passwordSchema,
+  sanitizeHtml,
+  apiKeyAuth,
+  requireScope,
+  securityConfig,
+} from '../index';
+
+// Initialize Express
+const app = express();
+const PORT = process.env.PORT || 3000;
+const isDev = process.env.NODE_ENV === 'development';
+
+// ============================================================================
+// Basic Middleware
+// ============================================================================
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// ============================================================================
+// Session Configuration (if using sessions)
+// ============================================================================
+
+if (process.env.REDIS_URL) {
+  const redis = new Redis(process.env.REDIS_URL);
+
+  app.use(
+    session({
+      store: new RedisStore({ client: redis }),
+      secret: securityConfig.session.secret,
+      resave: false,
+      saveUninitialized: false,
+      cookie: securityConfig.session.cookie,
+    })
+  );
+} else {
+  app.use(
+    session({
+      secret: securityConfig.session.secret,
+      resave: false,
+      saveUninitialized: false,
+      cookie: securityConfig.session.cookie,
+    })
+  );
+}
+
+// ============================================================================
+// Security Middleware
+// ============================================================================
+
+if (isDev) {
+  // Development: Relaxed security
+  devSecurity(app);
+} else {
+  // Production: Strict security
+  productionSecurity(app, process.env.REDIS_URL);
+}
+
+// Alternative: Manual configuration
+/*
+initializeSecurity({
+  app,
+  enableCors: true,
+  enableRateLimit: true,
+  enableSecurityHeaders: true,
+  enableCsrf: true,
+  rateLimitRedisUrl: process.env.REDIS_URL,
+  csrfRedisUrl: process.env.REDIS_URL,
+});
+*/
+
+// ============================================================================
+// Public Routes (No Authentication Required)
+// ============================================================================
+
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    message: 'Welcome to the API',
+    version: '1.0.0',
+    docs: '/api-docs',
+  });
+});
+
+app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ============================================================================
+// Authentication Routes (Extra Rate Limiting)
+// ============================================================================
+
+app.post(
+  '/api/auth/signup',
+  createRateLimiter('auth'), // 5 requests per 15 minutes
+  async (req: Request, res: Response) => {
+    try {
+      // Validate input
+      const result = await validateData(signUpSchema, req.body);
+
+      if (!result.success) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          errors: result.errors.format(),
+        });
+      }
+
+      // TODO: Create user in database
+      // const user = await createUser(result.data);
+
+      res.status(201).json({
+        message: 'User created successfully',
+        user: {
+          email: result.data.email,
+          // Don't send password back
+        },
+      });
+    } catch (error) {
+      console.error('Signup error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+app.post(
+  '/api/auth/login',
+  createRateLimiter('auth'),
+  async (req: Request, res: Response) => {
+    try {
+      // Validate input
+      const result = await validateData(signInSchema, req.body);
+
+      if (!result.success) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          errors: result.errors.format(),
+        });
+      }
+
+      // TODO: Verify credentials
+      // const user = await verifyCredentials(result.data);
+
+      // Set session
+      (req.session as any).userId = 'user-id';
+
+      res.json({
+        message: 'Login successful',
+        user: { email: result.data.email },
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+app.post('/api/auth/logout', (req: Request, res: Response) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    res.json({ message: 'Logout successful' });
+  });
+});
+
+// ============================================================================
+// Protected Routes (Authentication Required)
+// ============================================================================
+
+// Authentication middleware
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!(req.session as any).userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  next();
+}
+
+app.get('/api/profile', requireAuth, (req: Request, res: Response) => {
+  // TODO: Get user from database
+  res.json({
+    id: (req.session as any).userId,
+    email: 'user@example.com',
+  });
+});
+
+app.put('/api/profile', requireAuth, async (req: Request, res: Response) => {
+  try {
+    // Sanitize HTML content if present
+    if (req.body.bio) {
+      req.body.bio = sanitizeHtml(req.body.bio);
+    }
+
+    // TODO: Update user in database
+    res.json({ message: 'Profile updated' });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================================================
+// Public API Routes (API Key Authentication)
+// ============================================================================
+
+app.get(
+  '/api/public/data',
+  apiKeyAuth(),
+  requireScope('data:read'),
+  (req: Request, res: Response) => {
+    res.json({
+      data: [1, 2, 3, 4, 5],
+      apiKey: {
+        id: (req as any).apiKey.id,
+        scopes: (req as any).apiKey.scopes,
+      },
+    });
+  }
+);
+
+app.post(
+  '/api/public/data',
+  apiKeyAuth(),
+  requireScope('data:write'),
+  (req: Request, res: Response) => {
+    res.json({
+      message: 'Data created',
+      id: 'new-id',
+    });
+  }
+);
+
+// ============================================================================
+// Webhook Routes (CSRF Excluded)
+// ============================================================================
+
+app.post('/api/webhooks/stripe', async (req: Request, res: Response) => {
+  try {
+    // Verify webhook signature
+    // const signature = req.headers['stripe-signature'];
+    // const event = stripe.webhooks.constructEvent(req.body, signature, secret);
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(400).json({ error: 'Webhook error' });
+  }
+});
+
+// ============================================================================
+// Admin Routes (Extra Strict Rate Limiting)
+// ============================================================================
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  // TODO: Check if user is admin
+  const isAdmin = (req.session as any).isAdmin;
+  if (!isAdmin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+app.get(
+  '/api/admin/users',
+  requireAuth,
+  requireAdmin,
+  createRateLimiter('strict'),
+  (req: Request, res: Response) => {
+    // TODO: Get users from database
+    res.json({ users: [] });
+  }
+);
+
+// ============================================================================
+// Error Handling
+// ============================================================================
+
+// 404 handler
+app.use((req: Request, res: Response) => {
+  res.status(404).json({
+    error: 'Not Found',
+    message: 'The requested resource was not found',
+  });
+});
+
+// Global error handler
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Global error handler:', err);
+
+  // Don't leak error details in production
+  const isDev = process.env.NODE_ENV === 'development';
+
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: isDev ? err.message : 'An unexpected error occurred',
+    ...(isDev && { stack: err.stack }),
+  });
+});
+
+// ============================================================================
+// Start Server
+// ============================================================================
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Security: ${isDev ? 'Development (Relaxed)' : 'Production (Strict)'}`);
+});
+
+export default app;

@@ -1,0 +1,267 @@
+/**
+ * Security Module Index
+ * Central export point for all security-related functionality
+ */
+
+// Middleware
+export {
+  rateLimit,
+  createRateLimiter,
+  dynamicRateLimit,
+  rateLimitConfigs,
+  initializeRedis as initializeRateLimitRedis,
+} from './middleware/rate-limit';
+
+export {
+  cors,
+  strictCors,
+  devCors,
+  apiCors,
+  webhookCors,
+  environmentCors,
+  customOriginValidator,
+  type CorsConfig,
+} from './middleware/cors';
+
+export {
+  securityHeaders,
+  strictSecurityHeaders,
+  devSecurityHeaders,
+  apiSecurityHeaders,
+  environmentSecurityHeaders,
+  cspDirectives,
+  mergeCSPDirectives,
+  type SecurityHeadersConfig,
+} from './middleware/security-headers';
+
+export {
+  apiKeyAuth,
+  optionalApiKeyAuth,
+  requireScope,
+  requireAnyScope,
+  apiKeyRateLimit,
+  generateApiKey,
+  hashApiKey,
+  type ApiKeyConfig,
+  type ApiKeyData,
+} from './middleware/api-key';
+
+// Libraries
+export {
+  csrf,
+  csrfToken,
+  doubleCsrf,
+  getCsrfToken,
+  regenerateCsrfToken,
+  initializeCsrfRedis,
+  generateToken as generateCsrfToken,
+  type CsrfConfig,
+} from './lib/csrf';
+
+export {
+  // Schemas
+  emailSchema,
+  passwordSchema,
+  strongPasswordSchema,
+  usernameSchema,
+  nameSchema,
+  urlSchema,
+  phoneSchema,
+  uuidSchema,
+  dateSchema,
+  slugSchema,
+  hexColorSchema,
+  creditCardSchema,
+  signUpSchema,
+  signInSchema,
+  passwordResetRequestSchema,
+  passwordResetSchema,
+  changePasswordSchema,
+  updateProfileSchema,
+  paginationSchema,
+  searchSchema,
+
+  // Sanitization functions
+  sanitizeHtml,
+  sanitizeString,
+  stripHtml,
+  normalizeEmail,
+  createSlug,
+  sanitizeFilename,
+
+  // Password utilities
+  calculatePasswordStrength,
+  getPasswordStrengthLabel,
+
+  // Validation utilities
+  validateData,
+  formatZodErrors,
+  validateFileUpload,
+  isSafeSqlValue,
+} from './lib/validations';
+
+// Configuration
+export { default as securityConfig } from './config/security.config';
+
+/**
+ * Initialize all security middleware with default configuration
+ * This is a convenience function to quickly set up security for your app
+ */
+import { Express } from 'express';
+import { cors, environmentCors } from './middleware/cors';
+import { rateLimit, createRateLimiter, initializeRedis } from './middleware/rate-limit';
+import { securityHeaders, environmentSecurityHeaders } from './middleware/security-headers';
+import { csrf, csrfToken } from './lib/csrf';
+import securityConfig from './config/security.config';
+
+export interface SecurityInitOptions {
+  app: Express;
+  enableCors?: boolean;
+  enableRateLimit?: boolean;
+  enableSecurityHeaders?: boolean;
+  enableCsrf?: boolean;
+  corsConfig?: any;
+  rateLimitRedisUrl?: string;
+  csrfRedisUrl?: string;
+  customMiddleware?: Array<(req: any, res: any, next: any) => void>;
+}
+
+/**
+ * Initialize security middleware with sensible defaults
+ */
+export function initializeSecurity(options: SecurityInitOptions): void {
+  const {
+    app,
+    enableCors = true,
+    enableRateLimit = true,
+    enableSecurityHeaders = true,
+    enableCsrf = true,
+    corsConfig: customCorsConfig,
+    rateLimitRedisUrl,
+    csrfRedisUrl,
+    customMiddleware = [],
+  } = options;
+
+  console.log('Initializing security middleware...');
+
+  // 1. Security Headers (should be first)
+  if (enableSecurityHeaders) {
+    app.use(environmentSecurityHeaders());
+    console.log('✓ Security headers enabled');
+  }
+
+  // 2. CORS
+  if (enableCors) {
+    if (customCorsConfig) {
+      app.use(cors(customCorsConfig));
+    } else {
+      app.use(environmentCors());
+    }
+    console.log('✓ CORS enabled');
+  }
+
+  // 3. Rate Limiting
+  if (enableRateLimit) {
+    if (rateLimitRedisUrl) {
+      initializeRedis(rateLimitRedisUrl);
+      console.log('✓ Rate limiting with Redis enabled');
+    } else {
+      console.log('✓ Rate limiting with in-memory store enabled');
+    }
+
+    // Apply general rate limiting to all routes
+    app.use(rateLimit(securityConfig.rateLimit.general));
+
+    // Strict rate limiting for auth routes
+    app.use('/api/auth', createRateLimiter('auth'));
+    console.log('✓ Auth rate limiting configured');
+  }
+
+  // 4. CSRF Protection
+  if (enableCsrf) {
+    // Generate CSRF tokens for all requests
+    app.use(csrfToken(csrfRedisUrl ? { redis: require('ioredis')(csrfRedisUrl) } : {}));
+
+    // Validate CSRF tokens (automatically skips safe methods)
+    app.use(csrf(securityConfig.csrf));
+    console.log('✓ CSRF protection enabled');
+  }
+
+  // 5. Custom Middleware
+  if (customMiddleware.length > 0) {
+    customMiddleware.forEach(middleware => app.use(middleware));
+    console.log(`✓ ${customMiddleware.length} custom middleware applied`);
+  }
+
+  console.log('Security initialization complete!');
+}
+
+/**
+ * Quick setup for development (relaxed security)
+ */
+export function devSecurity(app: Express): void {
+  console.log('Setting up development security (relaxed)...');
+
+  app.use(require('./middleware/security-headers').devSecurityHeaders());
+  app.use(require('./middleware/cors').devCors());
+
+  console.log('✓ Development security configured');
+}
+
+/**
+ * Quick setup for production (strict security)
+ */
+export function productionSecurity(app: Express, redisUrl?: string): void {
+  console.log('Setting up production security (strict)...');
+
+  initializeSecurity({
+    app,
+    enableCors: true,
+    enableRateLimit: true,
+    enableSecurityHeaders: true,
+    enableCsrf: true,
+    rateLimitRedisUrl: redisUrl || process.env.REDIS_URL,
+    csrfRedisUrl: redisUrl || process.env.REDIS_URL,
+  });
+
+  console.log('✓ Production security configured');
+}
+
+/**
+ * API-only security (no CSRF, permissive CORS)
+ */
+export function apiSecurity(app: Express, allowedOrigins?: string[]): void {
+  console.log('Setting up API security...');
+
+  const { apiSecurityHeaders } = require('./middleware/security-headers');
+  const { apiCors } = require('./middleware/cors');
+  const { rateLimit } = require('./middleware/rate-limit');
+
+  app.use(apiSecurityHeaders());
+  app.use(apiCors(allowedOrigins));
+  app.use(rateLimit(securityConfig.rateLimit.api));
+
+  console.log('✓ API security configured');
+}
+
+/**
+ * Export convenience functions
+ */
+export const SecuritySetup = {
+  initialize: initializeSecurity,
+  dev: devSecurity,
+  production: productionSecurity,
+  api: apiSecurity,
+};
+
+export default {
+  // Setup functions
+  initialize: initializeSecurity,
+  devSecurity,
+  productionSecurity,
+  apiSecurity,
+  SecuritySetup,
+
+  // Configuration
+  config: securityConfig,
+};

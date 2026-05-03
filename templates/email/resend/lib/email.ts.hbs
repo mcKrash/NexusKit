@@ -1,0 +1,105 @@
+import { Resend } from 'resend';
+import WelcomeEmail from '@/emails/welcome';
+import VerifyEmailTemplate from '@/emails/verify-email';
+import ResetPasswordEmail from '@/emails/reset-password';
+import PaymentReceiptEmail from '@/emails/payment-receipt';
+
+if (!process.env.RESEND_API_KEY) {
+  throw new Error('RESEND_API_KEY is not defined in environment variables');
+}
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@{{projectName}}.com';
+
+export async function sendWelcomeEmail(to: string, name: string) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: 'Welcome to {{projectName}}!',
+      react: WelcomeEmail({ name })
+    });
+
+    if (error) {
+      console.error('Failed to send welcome email:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Welcome email error:', error);
+    return { success: false, error };
+  }
+}
+
+export async function sendVerificationEmail(to: string, verificationUrl: string) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: 'Verify your email address',
+      react: VerifyEmailTemplate({ verificationUrl })
+    });
+
+    if (error) {
+      console.error('Failed to send verification email:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Verification email error:', error);
+    return { success: false, error };
+  }
+}
+
+export async function sendPasswordResetEmail(to: string, resetUrl: string) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: 'Reset your password',
+      react: ResetPasswordEmail({ resetUrl })
+    });
+
+    if (error) {
+      console.error('Failed to send password reset email:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Password reset email error:', error);
+    return { success: false, error };
+  }
+}
+
+export async function sendPaymentReceiptEmail(
+  to: string,
+  receipt: {
+    amount: number;
+    plan: string;
+    date: Date;
+    invoiceUrl: string;
+  }
+) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: 'Payment Receipt - {{projectName}}',
+      react: PaymentReceiptEmail(receipt)
+    });
+
+    if (error) {
+      console.error('Failed to send payment receipt email:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('Payment receipt email error:', error);
+    return { success: false, error };
+  }
+}

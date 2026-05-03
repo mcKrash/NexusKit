@@ -1,0 +1,180 @@
+# Quick Start Guide
+
+Get your database up and running in 5 minutes!
+
+## Prerequisites
+
+- ✅ PostgreSQL installed and running
+- ✅ Node.js 18+ installed
+- ✅ Project dependencies installed (`npm install`)
+
+## 🚀 Setup Steps
+
+### 1. Configure Environment
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env and update DATABASE_URL
+DATABASE_URL="postgresql://username:password@localhost:5432/{{projectName}}_dev"
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install @prisma/client prisma bcryptjs
+npm install -D tsx @types/bcryptjs
+```
+
+### 3. Initialize Database
+
+```bash
+# Generate Prisma Client
+npm run db:generate
+
+# Push schema to database (for development)
+npm run db:push
+
+# OR create a migration (recommended)
+npm run db:migrate
+```
+
+### 4. Seed Demo Data
+
+```bash
+npm run db:seed
+```
+
+### 5. Verify Setup
+
+```bash
+# Open Prisma Studio to browse your database
+npm run db:studio
+```
+
+## 🎉 Done!
+
+Your database is ready! You now have:
+
+- ✅ User authentication tables
+- ✅ Subscription management
+- ✅ Payment tracking
+- ✅ Demo accounts (see below)
+
+### Demo Accounts
+
+Login with these credentials (password: `password123`):
+
+| Email | Role | Plan |
+|-------|------|------|
+| admin@example.com | Admin | - |
+| user@example.com | User | Free |
+| pro@example.com | User | Pro |
+| enterprise@example.com | User | Enterprise |
+
+## 📝 Common Commands
+
+```bash
+# View database in browser
+npm run db:studio
+
+# Create a migration after schema changes
+npm run db:migrate
+
+# Reset database (⚠️ deletes all data)
+npm run db:reset
+
+# Deploy migrations to production
+npm run db:migrate:prod
+```
+
+## 💻 Usage in Code
+
+```typescript
+import { prisma, getUserWithSubscription } from '@/lib/db';
+
+// Get user with subscription
+const user = await getUserWithSubscription('user-id');
+
+// Create a new user
+const newUser = await prisma.user.create({
+  data: {
+    email: 'user@example.com',
+    name: 'John Doe',
+    password: await hash('password', 12),
+  },
+});
+
+// Record a payment
+await prisma.payment.create({
+  data: {
+    userId: user.id,
+    amount: 2900, // $29.00 in cents
+    status: 'SUCCEEDED',
+    paidAt: new Date(),
+  },
+});
+```
+
+## 🔧 Troubleshooting
+
+### Can't connect to database?
+
+```bash
+# Test PostgreSQL connection
+psql postgresql://username:password@localhost:5432/database_name
+
+# Check if PostgreSQL is running
+# Mac: brew services list
+# Linux: sudo systemctl status postgresql
+# Windows: Check Services app
+```
+
+### Schema out of sync?
+
+```bash
+# Reset and start fresh
+npm run db:reset
+npm run db:seed
+```
+
+### Need help?
+
+- 📖 Check [README.md](./README.md) for detailed documentation
+- 📚 See [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for schema changes
+- 🌐 Visit [Prisma Docs](https://www.prisma.io/docs)
+
+## Next Steps
+
+1. **Configure Stripe Integration**
+   - Add Stripe keys to `.env`
+   - Connect webhook handlers
+   - Test subscription flow
+
+2. **Set Up Authentication**
+   - Configure NextAuth providers
+   - Add email verification
+   - Set up password reset
+
+3. **Deploy to Production**
+   - Set up production database
+   - Run migrations: `npm run db:migrate:prod`
+   - Configure connection pooling
+
+## 🎯 Production Checklist
+
+Before deploying to production:
+
+- [ ] Updated DATABASE_URL with production credentials
+- [ ] Configured connection pooling
+- [ ] Ran migrations: `npm run db:migrate:prod`
+- [ ] Set up database backups
+- [ ] Configured monitoring/alerts
+- [ ] Tested subscription flows
+- [ ] Verified webhook handlers
+- [ ] Set up SSL/TLS for database connection
+
+---
+
+**Need more details?** Check out the full [README.md](./README.md)

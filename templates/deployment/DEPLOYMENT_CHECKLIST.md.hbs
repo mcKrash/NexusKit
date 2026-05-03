@@ -1,0 +1,292 @@
+# 🚀 Deployment Checklist
+
+Use this checklist to ensure a smooth deployment process.
+
+## Pre-Deployment
+
+### Code Quality
+- [ ] All tests passing (`pnpm test`)
+- [ ] No TypeScript errors (`pnpm type-check`)
+- [ ] No linting errors (`pnpm lint`)
+- [ ] Build successful (`pnpm build`)
+- [ ] Code reviewed and approved
+- [ ] Changes merged to main/develop branch
+
+### Environment Setup
+- [ ] `.env.production` created and configured
+- [ ] All required environment variables set
+- [ ] Secrets generated (NEXTAUTH_SECRET, etc.)
+- [ ] Database connection string configured
+{{#if features.redis}}
+- [ ] Redis URL configured
+{{/if}}
+- [ ] OAuth credentials obtained and configured
+{{#if payments.stripe}}
+- [ ] Stripe keys (test and live) configured
+- [ ] Stripe webhook endpoint configured
+{{/if}}
+
+### Database
+- [ ] Production database created
+- [ ] Database connection tested
+- [ ] Backup strategy implemented
+- [ ] Migration scripts tested
+- [ ] Database user permissions verified
+- [ ] Connection pooling configured
+
+### Security
+- [ ] HTTPS/SSL certificate ready
+- [ ] Security headers configured
+- [ ] CORS policy set
+- [ ] Rate limiting configured
+- [ ] Secrets not committed to Git
+- [ ] `.env*` files in `.gitignore`
+- [ ] Content Security Policy reviewed
+- [ ] API routes properly authenticated
+
+## Deployment
+
+### Platform Setup
+- [ ] Platform account created (Vercel/Railway/Fly.io/etc.)
+- [ ] Project created in platform
+- [ ] Git repository connected
+- [ ] Environment variables added to platform
+- [ ] Build settings configured
+- [ ] Deploy regions selected
+
+### Domain & DNS
+- [ ] Domain purchased/available
+- [ ] DNS records configured
+- [ ] SSL certificate provisioned
+- [ ] Domain verified in platform
+- [ ] www redirect configured
+- [ ] DNS propagation verified
+
+### OAuth Configuration
+{{#if auth.github}}
+- [ ] GitHub OAuth app created
+- [ ] Redirect URI updated: `https://yourdomain.com/api/auth/callback/github`
+- [ ] Homepage URL updated
+{{/if}}
+{{#if auth.google}}
+- [ ] Google OAuth app created
+- [ ] Authorized redirect URIs updated
+- [ ] OAuth consent screen configured
+{{/if}}
+
+{{#if payments.stripe}}
+### Stripe Configuration
+- [ ] Stripe account in production mode
+- [ ] Products created in Stripe
+- [ ] Prices/plans configured
+- [ ] Webhook endpoint added: `https://yourdomain.com/api/webhooks/stripe`
+- [ ] Webhook events selected:
+  - [ ] `checkout.session.completed`
+  - [ ] `customer.subscription.created`
+  - [ ] `customer.subscription.updated`
+  - [ ] `customer.subscription.deleted`
+  - [ ] `invoice.paid`
+  - [ ] `invoice.payment_failed`
+- [ ] Webhook secret saved to environment variables
+- [ ] Test payment completed successfully
+{{/if}}
+
+{{#if email.resend}}
+### Email Configuration (Resend)
+- [ ] Resend account created
+- [ ] API key generated
+- [ ] Domain verified in Resend
+- [ ] From email address configured
+- [ ] Test email sent successfully
+{{/if}}
+
+{{#if email.sendgrid}}
+### Email Configuration (SendGrid)
+- [ ] SendGrid account created
+- [ ] API key generated
+- [ ] Sender identity verified
+- [ ] Domain authentication completed
+- [ ] Test email sent successfully
+{{/if}}
+
+### Database Migration
+- [ ] Database backup created
+- [ ] Migration script tested in staging
+- [ ] Migrations applied to production
+- [ ] Database schema verified
+- [ ] Rollback plan prepared
+
+### Deployment Execution
+- [ ] Deploy to staging first
+- [ ] Staging environment tested
+- [ ] Deploy to production
+- [ ] Health check passing
+- [ ] Application accessible
+- [ ] No console errors
+
+## Post-Deployment
+
+### Verification
+- [ ] Homepage loads correctly
+- [ ] Authentication flow works
+  - [ ] Sign up
+  - [ ] Sign in
+  - [ ] Sign out
+  - [ ] Password reset
+{{#if payments.stripe}}
+- [ ] Payment flow tested
+  - [ ] Checkout session creation
+  - [ ] Successful payment
+  - [ ] Webhook received
+  - [ ] Subscription created
+{{/if}}
+- [ ] API endpoints responding
+- [ ] Database queries working
+{{#if features.redis}}
+- [ ] Redis caching working
+{{/if}}
+- [ ] Email sending working
+
+### Monitoring Setup
+- [ ] Error tracking configured (Sentry)
+- [ ] Analytics configured
+- [ ] Uptime monitoring set up
+- [ ] Log aggregation configured
+- [ ] Performance monitoring enabled
+- [ ] Alert notifications set up
+
+### CI/CD
+- [ ] GitHub Actions workflow configured
+- [ ] Secrets added to GitHub repository
+- [ ] Automatic deployments working
+- [ ] Test suite running on PRs
+- [ ] Deployment notifications configured
+
+### Documentation
+- [ ] Environment variables documented
+- [ ] Deployment process documented
+- [ ] Troubleshooting guide created
+- [ ] Team members trained
+- [ ] Runbook created for incidents
+
+### Performance
+- [ ] Page load times acceptable (<3s)
+- [ ] Core Web Vitals passing
+- [ ] Images optimized
+- [ ] API response times acceptable (<500ms)
+- [ ] Database queries optimized
+- [ ] Caching strategy implemented
+
+### SEO & Marketing
+- [ ] Meta tags configured
+- [ ] Open Graph tags set
+- [ ] Twitter cards configured
+- [ ] Sitemap generated
+- [ ] robots.txt configured
+- [ ] Analytics tracking verified
+- [ ] Google Search Console set up
+
+### Legal & Compliance
+- [ ] Privacy policy published
+- [ ] Terms of service published
+- [ ] Cookie consent implemented
+- [ ] GDPR compliance verified
+- [ ] Data retention policy implemented
+
+### Backup & Recovery
+- [ ] Database backups automated
+- [ ] Backup restoration tested
+- [ ] Disaster recovery plan documented
+- [ ] Incident response plan created
+- [ ] Rollback procedure documented
+
+## Launch
+
+### Communication
+- [ ] Team notified of deployment
+- [ ] Users notified (if applicable)
+- [ ] Status page updated
+- [ ] Social media announcement prepared
+- [ ] Press release (if applicable)
+
+### Monitoring (First 24 Hours)
+- [ ] Monitor error rates
+- [ ] Watch for unusual traffic patterns
+- [ ] Check system resources (CPU, memory)
+- [ ] Monitor database performance
+- [ ] Review user feedback
+- [ ] Check payment processing
+- [ ] Monitor API rate limits
+
+### Post-Launch Tasks
+- [ ] Review and respond to user feedback
+- [ ] Address any critical bugs immediately
+- [ ] Update documentation as needed
+- [ ] Schedule post-mortem meeting
+- [ ] Plan next iteration/features
+- [ ] Celebrate the launch! 🎉
+
+## Rollback Plan
+
+If something goes wrong:
+
+1. **Immediate Actions**
+   - [ ] Trigger rollback to previous version
+   - [ ] Notify team of incident
+   - [ ] Activate status page
+
+2. **Investigation**
+   - [ ] Check error logs
+   - [ ] Review recent changes
+   - [ ] Identify root cause
+
+3. **Communication**
+   - [ ] Update status page
+   - [ ] Notify affected users
+   - [ ] Provide ETA for fix
+
+4. **Resolution**
+   - [ ] Apply fix
+   - [ ] Test thoroughly
+   - [ ] Deploy fix
+   - [ ] Verify resolution
+
+5. **Post-Incident**
+   - [ ] Document incident
+   - [ ] Update runbook
+   - [ ] Conduct post-mortem
+   - [ ] Implement preventive measures
+
+## Maintenance
+
+### Weekly
+- [ ] Review error logs
+- [ ] Check uptime statistics
+- [ ] Review performance metrics
+- [ ] Check database size/growth
+
+### Monthly
+- [ ] Update dependencies
+- [ ] Security audit
+- [ ] Review and rotate secrets
+- [ ] Database optimization
+- [ ] Cost analysis
+- [ ] Backup restoration test
+
+### Quarterly
+- [ ] Disaster recovery drill
+- [ ] Security penetration test
+- [ ] Performance optimization review
+- [ ] Infrastructure cost optimization
+
+---
+
+## Notes
+
+- Keep this checklist updated as your deployment process evolves
+- Share with all team members involved in deployments
+- Review and improve the process after each deployment
+- Automate checklist items where possible
+
+**Last Updated:** [Date]
+**Deployment Version:** {{version}}

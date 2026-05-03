@@ -1,0 +1,165 @@
+import ora from 'ora';
+import chalk from 'chalk';
+import fs from 'fs-extra';
+import path from 'path';
+import { execa } from 'execa';
+import Handlebars from 'handlebars';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+export async function generateProject(config) {
+  const targetDir = path.join(process.cwd(), config.projectName);
+
+  // Step 1: Create project directory
+  let spinner = ora('Creating project directory...').start();
+  try {
+    await fs.ensureDir(targetDir);
+    spinner.succeed('Project directory created');
+  } catch (error) {
+    spinner.fail('Failed to create directory');
+    throw error;
+  }
+
+  // Step 2: Copy and process templates
+  spinner = ora('Generating files from templates...').start();
+  try {
+    await processTemplates(config, targetDir);
+    spinner.succeed('Files generated');
+  } catch (error) {
+    spinner.fail('Failed to generate files');
+    throw error;
+  }
+
+  // Step 3: Install dependencies
+  if (!config.skipInstall) {
+    spinner = ora('Installing dependencies (this may take a few minutes)...').start();
+    try {
+      await installDependencies(targetDir);
+      spinner.succeed('Dependencies installed');
+    } catch (error) {
+      spinner.fail('Failed to install dependencies');
+      console.log(chalk.yellow('\nYou can install them manually by running:'));
+      console.log(chalk.cyan(`  cd ${config.projectName} && npm install\n`));
+    }
+  }
+
+  // Step 4: Initialize git
+  if (!config.skipGit) {
+    spinner = ora('Initializing git repository...').start();
+    try {
+      await execa('git', ['init'], { cwd: targetDir });
+      await execa('git', ['add', '.'], { cwd: targetDir });
+      await execa('git', ['commit', '-m', 'Initial commit from create-saas-app'], { cwd: targetDir });
+      spinner.succeed('Git repository initialized');
+    } catch (error) {
+      spinner.warn('Git initialization skipped');
+    }
+  }
+}
+
+async function processTemplates(config, targetDir) {
+  const templatesDir = path.join(__dirname, '../templates');
+
+  // Always copy base templates
+  await copyAndProcessDir(path.join(templatesDir, 'base'), targetDir, config);
+
+  // Copy auth templates
+  await copyAndProcessDir(
+    path.join(templatesDir, 'auth', config.stack.auth),
+    targetDir,
+    config
+  );
+
+  // Copy payment templates
+  await copyAndProcessDir(
+    path.join(templatesDir, 'payments', config.stack.payments),
+    targetDir,
+    config
+  );
+
+  // Copy database templates (when available)
+  // await copyAndProcessDir(
+  //   path.join(templatesDir, 'database', config.stack.database),
+  //   targetDir,
+  //   config
+  // );
+
+  // Copy admin dashboard if enabled
+  if (config.features?.adminDashboard) {
+    // await copyAndProcessDir(
+    //   path.join(templatesDir, 'admin'),
+    //   targetDir,
+    //   config
+    // );
+  }
+
+  // Copy Docker config if enabled
+  if (config.features?.docker) {
+    // await copyAndProcessDir(
+    //   path.join(templatesDir, 'deployment/docker'),
+    //   targetDir,
+    //   config
+    // );
+  }
+}
+
+async function copyAndProcessDir(sourceDir, targetDir, config) {
+  if (!await fs.pathExists(sourceDir)) {
+    console.log(chalk.yellow(`\nWarning: Template directory not found: ${sourceDir}`));
+    return;
+  }
+
+  const files = await fs.readdir(sourceDir, { withFileTypes: true });
+
+  for (const file of files) {
+    const sourcePath = path.join(sourceDir, file.name);
+    let targetPath = path.join(targetDir, file.name);
+
+    if (file.isDirectory()) {
+      await fs.ensureDir(targetPath);
+      await copyAndProcessDir(sourcePath, targetPath, config);
+    } else {
+      // Remove .hbs extension if present
+      if (file.name.endsWith('.hbs')) {
+        targetPath = targetPath.replace(/\.hbs$/, '');
+      }
+
+      // Process template if it's a .hbs file
+      if (file.name.endsWith('.hbs')) {
+        const template = await fs.readFile(sourcePath, 'utf8');
+        const compiled = Handlebars.compile(template);
+        const output = compiled(config);
+        await fs.writeFile(targetPath, output);
+      } else {
+        // Just copy non-template files
+        await fs.copy(sourcePath, targetPath);
+      }
+    }
+  }
+}
+
+async function installDependencies(targetDir) {
+  // Detect package manager
+  let packageManager = 'npm';
+
+  try {
+    await execa('pnpm', ['--version']);
+    packageManager = 'pnpm';
+  } catch {
+    try {
+      await execa('yarn', ['--version']);
+      packageManager = 'yarn';
+    } catch {
+      packageManager = 'npm';
+    }
+  }
+
+  // Install dependencies
+  await execa(packageManager, ['install'], {
+    cwd: targetDir,
+    stdio: 'pipe'
+  });
+}

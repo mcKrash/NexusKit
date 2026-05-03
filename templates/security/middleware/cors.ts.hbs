@@ -1,0 +1,297 @@
+import { Request, Response, NextFunction } from 'express';
+
+// CORS configuration interface
+export interface CorsConfig {
+  origin?: string | string[] | ((origin: string) => boolean);
+  methods?: string[];
+  allowedHeaders?: string[];
+  exposedHeaders?: string[];
+  credentials?: boolean;
+  maxAge?: number;
+  preflightContinue?: boolean;
+  optionsSuccessStatus?: number;
+}
+
+// Default CORS configuration
+const defaultConfig: CorsConfig = {
+  origin: process.env.NODE_ENV === 'production'
+    ? process.env.ALLOWED_ORIGINS?.split(',') || []
+    : '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'X-CSRF-Token',
+    'X-API-Key',
+    'Accept',
+    'Origin',
+  ],
+  exposedHeaders: [
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset',
+    'X-Total-Count',
+    'X-Page-Count',
+  ],
+  credentials: true,
+  maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
+};
+
+/**
+ * Parse origin string into array of allowed origins
+ */
+function parseOrigins(origin: string | string[] | undefined): string[] {
+  if (!origin) return [];
+  if (Array.isArray(origin)) return origin;
+  if (typeof origin === 'string') {
+    return origin.split(',').map(o => o.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+/**
+ * Check if origin is allowed
+ */
+function isOriginAllowed(
+  requestOrigin: string | undefined,
+  allowedOrigins: string | string[] | ((origin: string) => boolean) | undefined
+): boolean {
+  // No origin header (same-origin requests)
+  if (!requestOrigin) return true;
+
+  // Allow all origins
+  if (allowedOrigins === '*') return true;
+
+  // Function-based validation
+  if (typeof allowedOrigins === 'function') {
+    return allowedOrigins(requestOrigin);
+  }
+
+  // Array or string validation
+  const origins = Array.isArray(allowedOrigins)
+    ? allowedOrigins
+    : parseOrigins(allowedOrigins);
+
+  // Check exact match
+  if (origins.includes(requestOrigin)) return true;
+
+  // Check wildcard patterns
+  return origins.some(allowed => {
+    if (allowed === '*') return true;
+
+    // Support wildcards like *.example.com
+    if (allowed.startsWith('*.')) {
+      const domain = allowed.slice(2);
+      return requestOrigin.endsWith(`.${domain}`) || requestOrigin === domain;
+    }
+
+    // Support protocol-agnostic patterns
+    if (allowed.startsWith('//')) {
+      return requestOrigin.endsWith(allowed.slice(1));
+    }
+
+    return false;
+  });
+}
+
+/**
+ * CORS middleware factory
+ * @param config - CORS configuration options
+ * @returns Express middleware function
+ */
+export function cors(config: CorsConfig = {}) {
+  const options = { ...defaultConfig, ...config };
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    const requestOrigin = req.headers.origin;
+
+    // Check if origin is allowed
+    if (requestOrigin && !isOriginAllowed(requestOrigin, options.origin)) {
+      if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+      }
+      return next(); // Continue but don't set CORS headers
+    }
+
+    // Set Access-Control-Allow-Origin
+    if (options.credentials) {
+      // With credentials, must specify exact origin
+      res.setHeader('Access-Control-Allow-Origin', requestOrigin || '*');
+      res.setHeader('Vary', 'Origin');
+    } else if (options.origin === '*') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } else if (requestOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+      res.setHeader('Vary', 'Origin');
+    }
+
+    // Set Access-Control-Allow-Credentials
+    if (options.credentials) {
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      // Set Access-Control-Allow-Methods
+      if (options.methods && options.methods.length > 0) {
+        res.setHeader('Access-Control-Allow-Methods', options.methods.join(', '));
+      }
+
+      // Set Access-Control-Allow-Headers
+      if (options.allowedHeaders && options.allowedHeaders.length > 0) {
+        res.setHeader('Access-Control-Allow-Headers', options.allowedHeaders.join(', '));
+      } else {
+        // Echo back the requested headers
+        const requestHeaders = req.headers['access-control-request-headers'];
+        if (requestHeaders) {
+          res.setHeader('Access-Control-Allow-Headers', requestHeaders);
+        }
+      }
+
+      // Set Access-Control-Max-Age
+      if (options.maxAge) {
+        res.setHeader('Access-Control-Max-Age', options.maxAge.toString());
+      }
+
+      // Set Access-Control-Expose-Headers
+      if (options.exposedHeaders && options.exposedHeaders.length > 0) {
+        res.setHeader('Access-Control-Expose-Headers', options.exposedHeaders.join(', '));
+      }
+
+      if (options.preflightContinue) {
+        next();
+      } else {
+        res.status(options.optionsSuccessStatus || 204).end();
+      }
+    } else {
+      // Set Access-Control-Expose-Headers for non-preflight requests
+      if (options.exposedHeaders && options.exposedHeaders.length > 0) {
+        res.setHeader('Access-Control-Expose-Headers', options.exposedHeaders.join(', '));
+      }
+      next();
+    }
+  };
+}
+
+/**
+ * Strict CORS configuration for production
+ */
+export function strictCors(allowedOrigins: string[]) {
+  return cors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    maxAge: 600, // 10 minutes
+  });
+}
+
+/**
+ * Development CORS configuration (permissive)
+ */
+export function devCors() {
+  return cors({
+    origin: '*',
+    credentials: false,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
+}
+
+/**
+ * API-specific CORS configuration
+ */
+export function apiCors(allowedOrigins?: string[]) {
+  return cors({
+    origin: allowedOrigins || ['*'],
+    credentials: false,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-API-Key',
+      'X-Requested-With',
+    ],
+    exposedHeaders: [
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+      'X-RateLimit-Reset',
+      'X-Total-Count',
+    ],
+    maxAge: 86400, // 24 hours
+  });
+}
+
+/**
+ * Webhook-specific CORS configuration (restrictive)
+ */
+export function webhookCors(allowedOrigins: string[]) {
+  return cors({
+    origin: (origin) => {
+      // Only allow specific webhook sources
+      return allowedOrigins.some(allowed => {
+        if (allowed.includes('*')) {
+          const pattern = allowed.replace(/\*/g, '.*');
+          return new RegExp(`^${pattern}$`).test(origin);
+        }
+        return origin === allowed;
+      });
+    },
+    credentials: false,
+    methods: ['POST'],
+    allowedHeaders: ['Content-Type', 'X-Webhook-Signature'],
+    maxAge: 3600, // 1 hour
+  });
+}
+
+/**
+ * Custom origin validator example
+ * Use this for complex origin validation logic
+ */
+export function customOriginValidator(req: Request): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+
+  // Example: Allow all subdomains of your domain
+  const mainDomain = process.env.MAIN_DOMAIN || 'example.com';
+  if (origin.endsWith(`.${mainDomain}`) || origin === `https://${mainDomain}`) {
+    return true;
+  }
+
+  // Example: Allow localhost in development
+  if (process.env.NODE_ENV !== 'production') {
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return true;
+    }
+  }
+
+  // Example: Check against database of allowed origins
+  // const isAllowed = await checkOriginInDatabase(origin);
+  // return isAllowed;
+
+  return false;
+}
+
+/**
+ * Apply CORS based on environment
+ */
+export function environmentCors() {
+  const env = process.env.NODE_ENV;
+
+  if (env === 'production') {
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+    return strictCors(allowedOrigins);
+  }
+
+  if (env === 'development' || env === 'test') {
+    return devCors();
+  }
+
+  // Default to strict CORS with environment variable
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
+  return strictCors(allowedOrigins);
+}
+
+export default cors;

@@ -1,0 +1,399 @@
+# Database Migration Guide
+
+This guide covers how to manage database schema changes using Prisma migrations.
+
+## Development Workflow
+
+### 1. Modify the Schema
+
+Edit `prisma/schema.prisma` to add, modify, or remove models and fields.
+
+Example - Adding a new field:
+```prisma
+model User {
+  // ... existing fields
+  phoneNumber String? // New field
+}
+```
+
+### 2. Create a Migration
+
+```bash
+npm run db:migrate
+```
+
+You'll be prompted to name the migration. Use descriptive names:
+- `add_phone_number_to_users`
+- `create_notifications_table`
+- `add_indexes_for_performance`
+
+This command:
+1. Creates a new migration file in `prisma/migrations/`
+2. Applies the migration to your database
+3. Regenerates the Prisma Client
+
+### 3. Review the Migration
+
+Check the generated SQL in `prisma/migrations/[timestamp]_[name]/migration.sql`
+
+Example:
+```sql
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN "phoneNumber" TEXT;
+```
+
+### 4. Test the Changes
+
+```bash
+# Run your application tests
+npm test
+
+# Check the database with Prisma Studio
+npm run db:studio
+```
+
+## Production Deployment
+
+### Option 1: Automatic Migrations (Recommended)
+
+Add to your deployment script or CI/CD pipeline:
+
+```bash
+# Install dependencies
+npm install
+
+# Run migrations
+npm run db:migrate:prod
+
+# Start application
+npm start
+```
+
+### Option 2: Manual Review
+
+1. Review migrations locally:
+```bash
+npm run db:migrate
+```
+
+2. Commit migration files to git:
+```bash
+git add prisma/migrations
+git commit -m "Add phone number field to users"
+```
+
+3. Deploy and run migrations:
+```bash
+# On production server
+git pull
+npm install
+npm run db:migrate:prod
+```
+
+## Common Scenarios
+
+### Adding a Required Field
+
+When adding a non-nullable field to an existing table:
+
+```prisma
+model User {
+  // ... existing fields
+  accountType String @default("standard") // Add with default
+}
+```
+
+Or use a two-step migration:
+
+**Step 1**: Add field as optional
+```prisma
+accountType String?
+```
+
+**Step 2**: Populate data, then make required
+```typescript
+// In a script
+await prisma.user.updateMany({
+  where: { accountType: null },
+  data: { accountType: 'standard' }
+});
+```
+
+**Step 3**: Update schema
+```prisma
+accountType String // Remove ?
+```
+
+### Renaming a Field
+
+Prisma doesn't auto-detect renames. Use `@map` to preserve data:
+
+```prisma
+model User {
+  // Old: firstName String
+  fullName String @map("firstName") // Maps to existing column
+}
+```
+
+Or create a custom migration:
+
+1. Create migration:
+```bash
+npx prisma migrate dev --create-only
+```
+
+2. Edit the SQL:
+```sql
+ALTER TABLE "users" RENAME COLUMN "firstName" TO "fullName";
+```
+
+3. Apply:
+```bash
+npx prisma migrate dev
+```
+
+### Adding Indexes
+
+```prisma
+model User {
+  email String @unique
+  name  String
+
+  @@index([name]) // Add index for faster searches
+  @@index([email, name]) // Composite index
+}
+```
+
+### Removing a Model or Field
+
+1. Remove from schema:
+```prisma
+// Remove the entire User model or specific field
+```
+
+2. Create migration:
+```bash
+npm run db:migrate
+```
+
+**Warning**: This will delete data! Backup first if needed.
+
+## Rolling Back Migrations
+
+### Development
+
+Reset database (WARNING: deletes all data):
+```bash
+npm run db:reset
+```
+
+### Production
+
+1. Identify the migration to rollback to:
+```bash
+ls prisma/migrations/
+```
+
+2. Manually revert:
+```sql
+-- Write inverse SQL
+ALTER TABLE "users" DROP COLUMN "phoneNumber";
+```
+
+3. Mark as resolved:
+```bash
+npx prisma migrate resolve --rolled-back "[migration_name]"
+```
+
+## Troubleshooting
+
+### Migration Failed Midway
+
+```bash
+# Mark as rolled back
+npx prisma migrate resolve --rolled-back "[migration_name]"
+
+# Fix the issue
+# Try again
+npm run db:migrate
+```
+
+### Schema Out of Sync
+
+```bash
+# Pull current database state
+npx prisma db pull
+
+# Compare with your schema
+# Resolve conflicts manually
+```
+
+### Migration Conflicts (Multiple Developers)
+
+1. Pull latest:
+```bash
+git pull
+```
+
+2. If conflicts in migrations:
+```bash
+# Reset your dev database
+npm run db:reset
+
+# Recreate from migrations
+npm run db:migrate
+```
+
+### Production Database Locked
+
+If migration times out:
+
+1. Check for long-running queries:
+```sql
+SELECT * FROM pg_stat_activity WHERE state = 'active';
+```
+
+2. Consider maintenance window for large migrations
+
+3. Use online migration tools for zero-downtime:
+   - Add columns as nullable first
+   - Backfill data in batches
+   - Make required in second deployment
+
+## Best Practices
+
+### DO ✅
+
+- Always test migrations in development first
+- Backup production database before migrations
+- Use descriptive migration names
+- Commit migration files to version control
+- Review generated SQL before applying
+- Add indexes for frequently queried fields
+- Use `@default` for new required fields
+
+### DON'T ❌
+
+- Don't modify existing migration files
+- Don't skip migrations in sequence
+- Don't delete migration files
+- Don't apply untested migrations to production
+- Don't rename without using `@map`
+- Don't add required fields without defaults to populated tables
+
+## Advanced: Custom Migrations
+
+For complex changes, create an empty migration and write custom SQL:
+
+```bash
+# Create empty migration
+npx prisma migrate dev --create-only --name custom_data_transformation
+```
+
+Edit `prisma/migrations/[timestamp]_custom_data_transformation/migration.sql`:
+
+```sql
+-- Custom SQL for data transformation
+UPDATE "users"
+SET "fullName" = CONCAT("firstName", ' ', "lastName")
+WHERE "fullName" IS NULL;
+
+-- Add indexes
+CREATE INDEX CONCURRENTLY "idx_users_fullname" ON "users"("fullName");
+```
+
+Apply:
+```bash
+npx prisma migrate dev
+```
+
+## Monitoring Migrations
+
+### Check Migration Status
+
+```bash
+npx prisma migrate status
+```
+
+### View Migration History
+
+```sql
+SELECT * FROM "_prisma_migrations" ORDER BY finished_at DESC;
+```
+
+## Emergency Procedures
+
+### Production Migration Failed
+
+1. **Don't Panic**: Database might be in inconsistent state
+
+2. **Assess Damage**:
+```bash
+npx prisma migrate status
+```
+
+3. **Options**:
+   - If migration partially applied: Complete it manually
+   - If data corrupted: Restore from backup
+   - If just marked as failed: Mark as resolved and rerun
+
+4. **Mark as Resolved** (if manually fixed):
+```bash
+npx prisma migrate resolve --applied "[migration_name]"
+```
+
+### Restore from Backup
+
+```bash
+# PostgreSQL
+pg_restore -d database_name backup_file.dump
+
+# Mark all migrations as applied
+npx prisma migrate resolve --applied "[each_migration]"
+```
+
+## Performance Considerations
+
+### Large Tables
+
+For tables with millions of rows:
+
+1. Add columns as nullable
+2. Backfill in batches:
+```typescript
+const batchSize = 1000;
+let skip = 0;
+while (true) {
+  const users = await prisma.user.findMany({
+    where: { newField: null },
+    take: batchSize,
+    skip,
+  });
+
+  if (users.length === 0) break;
+
+  await prisma.user.updateMany({
+    where: { id: { in: users.map(u => u.id) } },
+    data: { newField: 'default' },
+  });
+
+  skip += batchSize;
+}
+```
+3. Make required in next deployment
+
+### Index Creation
+
+Use `CREATE INDEX CONCURRENTLY` for large tables:
+
+```sql
+CREATE INDEX CONCURRENTLY "idx_name" ON "table"("column");
+```
+
+This allows reads/writes during index creation.
+
+## Resources
+
+- [Prisma Migrate Docs](https://www.prisma.io/docs/concepts/components/prisma-migrate)
+- [PostgreSQL ALTER TABLE](https://www.postgresql.org/docs/current/sql-altertable.html)
+- [Schema Prototyping](https://www.prisma.io/docs/concepts/components/prisma-migrate/db-push)

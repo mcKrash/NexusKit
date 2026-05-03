@@ -1,0 +1,326 @@
+# Security Module
+
+Production-ready security middleware and utilities for your Express.js application.
+
+## Features
+
+- **Rate Limiting** - Prevent abuse with IP and user-based rate limiting
+- **CORS** - Flexible cross-origin resource sharing configuration
+- **Security Headers** - Comprehensive security headers (HSTS, CSP, etc.)
+- **Input Validation** - Zod-based validation schemas and sanitization
+- **CSRF Protection** - Token-based CSRF protection
+- **API Key Authentication** - Secure API key management with scopes
+
+## Quick Start
+
+### Basic Setup
+
+```typescript
+import express from 'express';
+import { initializeSecurity } from './security';
+
+const app = express();
+
+// Initialize all security features with defaults
+initializeSecurity({
+  app,
+  enableCors: true,
+  enableRateLimit: true,
+  enableSecurityHeaders: true,
+  enableCsrf: true,
+});
+
+app.listen(3000);
+```
+
+### Environment-Specific Setup
+
+```typescript
+// Development (relaxed security)
+import { devSecurity } from './security';
+devSecurity(app);
+
+// Production (strict security)
+import { productionSecurity } from './security';
+productionSecurity(app, process.env.REDIS_URL);
+
+// API-only (no CSRF)
+import { apiSecurity } from './security';
+apiSecurity(app, ['https://app.example.com']);
+```
+
+## Individual Middleware Usage
+
+### Rate Limiting
+
+```typescript
+import { rateLimit, createRateLimiter } from './security';
+
+// Predefined configurations
+app.post('/api/auth/login', createRateLimiter('auth'), loginHandler);
+app.use('/api', createRateLimiter('api'));
+
+// Custom configuration
+app.use('/api/endpoint', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 100,
+  message: 'Too many requests',
+}));
+
+// Dynamic rate limiting by user tier
+import { dynamicRateLimit } from './security';
+app.use('/api', dynamicRateLimit({
+  windowMs: 60 * 60 * 1000,
+  maxRequests: 100, // Base limit, multiplied by tier
+}));
+```
+
+### CORS
+
+```typescript
+import { cors, strictCors } from './security';
+
+// Environment-based
+import { environmentCors } from './security';
+app.use(environmentCors());
+
+// Strict (production)
+app.use(strictCors(['https://example.com']));
+
+// Custom
+app.use(cors({
+  origin: ['https://example.com'],
+  credentials: true,
+  methods: ['GET', 'POST'],
+}));
+```
+
+### Security Headers
+
+```typescript
+import { securityHeaders, strictSecurityHeaders } from './security';
+
+// Environment-based
+import { environmentSecurityHeaders } from './security';
+app.use(environmentSecurityHeaders());
+
+// Custom CSP
+import { mergeCSPDirectives, cspDirectives } from './security';
+app.use(securityHeaders({
+  csp: {
+    directives: mergeCSPDirectives(
+      cspDirectives.payment,
+      { 'default-src': ["'self'"] }
+    ),
+  },
+}));
+```
+
+### Input Validation
+
+```typescript
+import { validateData, signUpSchema, sanitizeHtml } from './security';
+
+// Validate request data
+app.post('/api/signup', async (req, res) => {
+  const result = await validateData(signUpSchema, req.body);
+
+  if (!result.success) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      errors: formatZodErrors(result.errors),
+    });
+  }
+
+  // Use validated data
+  const user = await createUser(result.data);
+  res.json(user);
+});
+
+// Sanitize HTML
+const safeContent = sanitizeHtml(userInput);
+
+// Check password strength
+import { calculatePasswordStrength } from './security';
+const strength = calculatePasswordStrength(password); // 0-4
+```
+
+### CSRF Protection
+
+```typescript
+import { csrf, csrfToken } from './security';
+
+// Enable CSRF
+app.use(csrfToken()); // Generate tokens
+app.use(csrf());      // Validate tokens
+
+// In your template (EJS)
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="<%= csrfToken %>">
+</form>
+
+// In client-side JavaScript
+fetch('/api/endpoint', {
+  method: 'POST',
+  headers: {
+    'X-CSRF-Token': getCookie('csrf-token'),
+  },
+  body: JSON.stringify(data),
+});
+
+// Regenerate after login
+import { regenerateCsrfToken } from './security';
+await regenerateCsrfToken(req, res);
+```
+
+### API Key Authentication
+
+```typescript
+import { apiKeyAuth, requireScope, generateApiKey } from './security';
+
+// Protect routes
+app.use('/api/public', apiKeyAuth());
+
+// Require specific permissions
+app.get('/api/users',
+  apiKeyAuth(),
+  requireScope('users:read'),
+  getUsersHandler
+);
+
+// Generate API key
+const newKey = generateApiKey('sk'); // sk_abc123...
+```
+
+## Configuration
+
+Create a `.env` file:
+
+```bash
+NODE_ENV=production
+
+# Redis (optional but recommended)
+REDIS_URL=redis://localhost:6379
+
+# CORS
+ALLOWED_ORIGINS=https://example.com,https://app.example.com
+
+# Sessions
+SESSION_SECRET=your-secret-key-here
+JWT_SECRET=your-jwt-secret-here
+
+# CSP Reporting
+CSP_REPORT_URI=https://your-domain.com/api/csp-report
+
+# Email
+EMAIL_FROM=noreply@yourdomain.com
+```
+
+## Available Validation Schemas
+
+```typescript
+import {
+  emailSchema,
+  passwordSchema,
+  strongPasswordSchema,
+  usernameSchema,
+  nameSchema,
+  urlSchema,
+  phoneSchema,
+  signUpSchema,
+  signInSchema,
+  updateProfileSchema,
+} from './security';
+```
+
+## Security Headers Included
+
+- ✅ `Strict-Transport-Security` (HSTS)
+- ✅ `Content-Security-Policy` (CSP)
+- ✅ `X-Frame-Options`
+- ✅ `X-Content-Type-Options`
+- ✅ `X-XSS-Protection`
+- ✅ `Referrer-Policy`
+- ✅ `Permissions-Policy`
+- ✅ `Cross-Origin-Embedder-Policy`
+- ✅ `Cross-Origin-Opener-Policy`
+- ✅ `Cross-Origin-Resource-Policy`
+
+## Best Practices
+
+### 1. Always Use HTTPS in Production
+
+```typescript
+app.use((req, res, next) => {
+  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+    return next();
+  }
+  res.redirect('https://' + req.headers.host + req.url);
+});
+```
+
+### 2. Use Redis for Rate Limiting in Production
+
+```typescript
+import { initializeRedis } from './security';
+initializeRedis(process.env.REDIS_URL);
+```
+
+### 3. Validate All User Input
+
+```typescript
+const result = await validateData(schema, data);
+if (!result.success) {
+  // Handle validation errors
+}
+```
+
+### 4. Sanitize Output
+
+```typescript
+const safeHtml = sanitizeHtml(userContent);
+```
+
+### 5. Use Strong Session Secrets
+
+```bash
+# Generate a strong secret
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+## Testing Security
+
+```bash
+# Check dependencies for vulnerabilities
+npm audit
+
+# Run security tests
+npm test
+
+# Check security headers
+curl -I https://your-domain.com
+```
+
+## Monitoring
+
+Enable security logging:
+
+```typescript
+import securityConfig from './security/config/security.config';
+
+if (securityConfig.logging.logAuthAttempts) {
+  // Log authentication attempts
+}
+```
+
+## API Documentation
+
+See [SECURITY.md](./SECURITY.md) for comprehensive security documentation.
+
+## License
+
+MIT
+
+## Support
+
+For security issues, please email security@yourdomain.com

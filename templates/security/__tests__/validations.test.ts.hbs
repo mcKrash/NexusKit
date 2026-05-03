@@ -1,0 +1,197 @@
+/**
+ * Validation Tests
+ * Test all validation schemas and sanitization functions
+ */
+
+import {
+  emailSchema,
+  passwordSchema,
+  strongPasswordSchema,
+  usernameSchema,
+  calculatePasswordStrength,
+  sanitizeHtml,
+  sanitizeString,
+  normalizeEmail,
+  createSlug,
+  validateData,
+} from '../lib/validations';
+
+describe('Email Validation', () => {
+  test('valid email should pass', async () => {
+    const result = await validateData(emailSchema, 'test@example.com');
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toBe('test@example.com');
+    }
+  });
+
+  test('invalid email should fail', async () => {
+    const result = await validateData(emailSchema, 'invalid-email');
+    expect(result.success).toBe(false);
+  });
+
+  test('email should be lowercase', async () => {
+    const result = await validateData(emailSchema, 'TEST@EXAMPLE.COM');
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toBe('test@example.com');
+    }
+  });
+});
+
+describe('Password Validation', () => {
+  test('strong password should pass', async () => {
+    const result = await validateData(passwordSchema, 'Test123!@#');
+    expect(result.success).toBe(true);
+  });
+
+  test('weak password should fail', async () => {
+    const result = await validateData(passwordSchema, 'weak');
+    expect(result.success).toBe(false);
+  });
+
+  test('password without uppercase should fail', async () => {
+    const result = await validateData(passwordSchema, 'test123!@#');
+    expect(result.success).toBe(false);
+  });
+
+  test('password without lowercase should fail', async () => {
+    const result = await validateData(passwordSchema, 'TEST123!@#');
+    expect(result.success).toBe(false);
+  });
+
+  test('password without number should fail', async () => {
+    const result = await validateData(passwordSchema, 'TestTest!@#');
+    expect(result.success).toBe(false);
+  });
+
+  test('password without special char should fail', async () => {
+    const result = await validateData(passwordSchema, 'Test1234');
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('Password Strength', () => {
+  test('very weak password', () => {
+    expect(calculatePasswordStrength('weak')).toBe(0);
+  });
+
+  test('weak password', () => {
+    expect(calculatePasswordStrength('Weak123')).toBeGreaterThanOrEqual(1);
+  });
+
+  test('strong password', () => {
+    expect(calculatePasswordStrength('Strong123!@#')).toBeGreaterThanOrEqual(3);
+  });
+
+  test('very strong password', () => {
+    expect(calculatePasswordStrength('VeryStrong123!@#$%^&*()')).toBe(4);
+  });
+});
+
+describe('Username Validation', () => {
+  test('valid username should pass', async () => {
+    const result = await validateData(usernameSchema, 'john_doe');
+    expect(result.success).toBe(true);
+  });
+
+  test('username with spaces should fail', async () => {
+    const result = await validateData(usernameSchema, 'john doe');
+    expect(result.success).toBe(false);
+  });
+
+  test('username with special chars should fail', async () => {
+    const result = await validateData(usernameSchema, 'john@doe');
+    expect(result.success).toBe(false);
+  });
+
+  test('username with admin should fail', async () => {
+    const result = await validateData(usernameSchema, 'admin123');
+    expect(result.success).toBe(false);
+  });
+
+  test('short username should fail', async () => {
+    const result = await validateData(usernameSchema, 'ab');
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('HTML Sanitization', () => {
+  test('should allow safe tags', () => {
+    const html = '<p>Hello <b>World</b></p>';
+    const sanitized = sanitizeHtml(html);
+    expect(sanitized).toContain('<p>');
+    expect(sanitized).toContain('<b>');
+  });
+
+  test('should remove script tags', () => {
+    const html = '<p>Hello</p><script>alert("XSS")</script>';
+    const sanitized = sanitizeHtml(html);
+    expect(sanitized).not.toContain('<script>');
+    expect(sanitized).not.toContain('alert');
+  });
+
+  test('should remove event handlers', () => {
+    const html = '<p onclick="alert(\'XSS\')">Click me</p>';
+    const sanitized = sanitizeHtml(html);
+    expect(sanitized).not.toContain('onclick');
+  });
+
+  test('should allow safe links', () => {
+    const html = '<a href="https://example.com">Link</a>';
+    const sanitized = sanitizeHtml(html);
+    expect(sanitized).toContain('<a');
+    expect(sanitized).toContain('href');
+  });
+});
+
+describe('String Sanitization', () => {
+  test('should escape special characters', () => {
+    const input = '<script>alert("XSS")</script>';
+    const sanitized = sanitizeString(input);
+    expect(sanitized).not.toContain('<script>');
+  });
+
+  test('should trim whitespace', () => {
+    const input = '  hello world  ';
+    const sanitized = sanitizeString(input);
+    expect(sanitized).toBe('hello world');
+  });
+});
+
+describe('Email Normalization', () => {
+  test('should normalize email', () => {
+    const email = 'Test.User+tag@EXAMPLE.COM';
+    const normalized = normalizeEmail(email);
+    expect(normalized.toLowerCase()).toContain('example.com');
+  });
+});
+
+describe('Slug Creation', () => {
+  test('should create slug from string', () => {
+    const slug = createSlug('Hello World! This is a Test');
+    expect(slug).toBe('hello-world-this-is-a-test');
+  });
+
+  test('should handle special characters', () => {
+    const slug = createSlug('Hello & World @ 2024!');
+    expect(slug).toBe('hello-world-2024');
+  });
+
+  test('should handle multiple spaces', () => {
+    const slug = createSlug('Hello    World');
+    expect(slug).toBe('hello-world');
+  });
+});
+
+describe('Strong Password Schema', () => {
+  test('12+ character password should pass', async () => {
+    const result = await validateData(strongPasswordSchema, 'VeryStrong123!@#');
+    expect(result.success).toBe(true);
+  });
+
+  test('short strong password should fail', async () => {
+    const result = await validateData(strongPasswordSchema, 'Strong1!');
+    expect(result.success).toBe(false);
+  });
+});

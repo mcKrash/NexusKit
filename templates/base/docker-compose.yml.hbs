@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: {{projectName}}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: {{projectName}}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  {{#if features.redis}}
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: {{projectName}}-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  {{/if}}
+
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {{projectName}}-app
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/{{projectName}}
+      DIRECT_URL: postgresql://postgres:postgres@db:5432/{{projectName}}
+      {{#if features.redis}}
+      REDIS_URL: redis://redis:6379
+      {{/if}}
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      {{#if features.stripe}}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      {{/if}}
+      {{#if features.resend}}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      {{/if}}
+      {{#if features.sendgrid}}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      {{/if}}
+    depends_on:
+      db:
+        condition: service_healthy
+      {{#if features.redis}}
+      redis:
+        condition: service_healthy
+      {{/if}}
+    volumes:
+      - ./prisma:/app/prisma
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             node server.js"
+
+volumes:
+  postgres_data:
+    driver: local
+  {{#if features.redis}}
+  redis_data:
+    driver: local
+  {{/if}}
+
+networks:
+  default:
+    name: {{projectName}}-network

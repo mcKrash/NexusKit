@@ -1,0 +1,29 @@
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md}\"",
+    {{#if database.prisma}}
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    {{/if}}
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:e2e": "playwright test",
+    "postinstall": "prisma generate || true",
+    "deploy:vercel": "vercel --prod",
+    "deploy:railway": "railway up",
+    "deploy:fly": "flyctl deploy",
+    "deploy:docker": "docker build -t {{projectName}} . && docker-compose up -d",
+    "health-check": "curl -f http://localhost:3000/api/health || exit 1"
+  }
+}

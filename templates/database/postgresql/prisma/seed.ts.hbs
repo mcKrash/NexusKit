@@ -1,0 +1,181 @@
+import { PrismaClient } from '@prisma/client';
+import { hash } from 'bcryptjs';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('🌱 Seeding database...');
+
+  // Hash password for demo users
+  const hashedPassword = await hash('password123', 12);
+
+  // Create admin user
+  const adminUser = await prisma.user.upsert({
+    where: { email: 'admin@example.com' },
+    update: {},
+    create: {
+      email: 'admin@example.com',
+      name: 'Admin User',
+      password: hashedPassword,
+      emailVerified: new Date(),
+      role: 'ADMIN',
+      stripeCustomerId: 'cus_admin_example',
+    },
+  });
+
+  console.log('✅ Created admin user:', adminUser.email);
+
+  // Create free tier user
+  const freeUser = await prisma.user.upsert({
+    where: { email: 'user@example.com' },
+    update: {},
+    create: {
+      email: 'user@example.com',
+      name: 'Free User',
+      password: hashedPassword,
+      emailVerified: new Date(),
+      role: 'USER',
+      stripeCustomerId: 'cus_free_example',
+    },
+  });
+
+  console.log('✅ Created free user:', freeUser.email);
+
+  // Create pro tier user
+  const proUser = await prisma.user.upsert({
+    where: { email: 'pro@example.com' },
+    update: {},
+    create: {
+      email: 'pro@example.com',
+      name: 'Pro User',
+      password: hashedPassword,
+      emailVerified: new Date(),
+      role: 'USER',
+      stripeCustomerId: 'cus_pro_example',
+    },
+  });
+
+  console.log('✅ Created pro user:', proUser.email);
+
+  // Create enterprise tier user
+  const enterpriseUser = await prisma.user.upsert({
+    where: { email: 'enterprise@example.com' },
+    update: {},
+    create: {
+      email: 'enterprise@example.com',
+      name: 'Enterprise User',
+      password: hashedPassword,
+      emailVerified: new Date(),
+      role: 'USER',
+      stripeCustomerId: 'cus_enterprise_example',
+    },
+  });
+
+  console.log('✅ Created enterprise user:', enterpriseUser.email);
+
+  // Create subscriptions for paying users
+  const now = new Date();
+  const nextMonth = new Date(now);
+  nextMonth.setMonth(now.getMonth() + 1);
+
+  // Free subscription (default state, typically no subscription record needed)
+  await prisma.subscription.upsert({
+    where: { stripeSubscriptionId: 'sub_free_example' },
+    update: {},
+    create: {
+      userId: freeUser.id,
+      stripeSubscriptionId: 'sub_free_example',
+      status: 'ACTIVE',
+      plan: 'FREE',
+      currentPeriodStart: now,
+      currentPeriodEnd: nextMonth,
+      cancelAtPeriodEnd: false,
+    },
+  });
+
+  console.log('✅ Created free subscription for:', freeUser.email);
+
+  // Pro subscription
+  await prisma.subscription.upsert({
+    where: { stripeSubscriptionId: 'sub_pro_example' },
+    update: {},
+    create: {
+      userId: proUser.id,
+      stripeSubscriptionId: 'sub_pro_example',
+      status: 'ACTIVE',
+      plan: 'PRO',
+      currentPeriodStart: now,
+      currentPeriodEnd: nextMonth,
+      cancelAtPeriodEnd: false,
+    },
+  });
+
+  console.log('✅ Created pro subscription for:', proUser.email);
+
+  // Enterprise subscription
+  await prisma.subscription.upsert({
+    where: { stripeSubscriptionId: 'sub_enterprise_example' },
+    update: {},
+    create: {
+      userId: enterpriseUser.id,
+      stripeSubscriptionId: 'sub_enterprise_example',
+      status: 'ACTIVE',
+      plan: 'ENTERPRISE',
+      currentPeriodStart: now,
+      currentPeriodEnd: nextMonth,
+      cancelAtPeriodEnd: false,
+    },
+  });
+
+  console.log('✅ Created enterprise subscription for:', enterpriseUser.email);
+
+  // Create payment records for pro user
+  await prisma.payment.create({
+    data: {
+      userId: proUser.id,
+      amount: 2900, // $29.00 in cents
+      currency: 'usd',
+      status: 'SUCCEEDED',
+      stripeInvoiceId: 'in_pro_example_1',
+      description: 'Pro Plan - Monthly',
+      paidAt: now,
+    },
+  });
+
+  console.log('✅ Created payment record for:', proUser.email);
+
+  // Create payment records for enterprise user
+  await prisma.payment.create({
+    data: {
+      userId: enterpriseUser.id,
+      amount: 9900, // $99.00 in cents
+      currency: 'usd',
+      status: 'SUCCEEDED',
+      stripeInvoiceId: 'in_enterprise_example_1',
+      description: 'Enterprise Plan - Monthly',
+      paidAt: now,
+    },
+  });
+
+  console.log('✅ Created payment record for:', enterpriseUser.email);
+
+  console.log('');
+  console.log('🎉 Database seeding completed successfully!');
+  console.log('');
+  console.log('📝 Demo accounts:');
+  console.log('   Admin:      admin@example.com / password123');
+  console.log('   Free:       user@example.com / password123');
+  console.log('   Pro:        pro@example.com / password123');
+  console.log('   Enterprise: enterprise@example.com / password123');
+  console.log('');
+}
+
+main()
+  .then(async () => {
+    await prisma.$disconnect();
+  })
+  .catch(async (e) => {
+    console.error('❌ Error seeding database:', e);
+    await prisma.$disconnect();
+    process.exit(1);
+  });

@@ -1,0 +1,177 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import UserTable from '@/components/admin/UserTable';
+import { Search, Filter, UserPlus } from 'lucide-react';
+
+interface User {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
+  emailVerified: Date | null;
+  createdAt: Date;
+  subscription?: {
+    id: string;
+    plan: string;
+    status: string;
+    currentPeriodEnd: Date;
+  } | null;
+}
+
+export default function UsersPage() {
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [subscriptionFilter, setSubscriptionFilter] = useState<string>('all');
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/admin/users');
+      if (!response.ok) throw new Error('Failed to fetch users');
+      const data = await response.json();
+      setUsers(data.users);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateUser = async (userId: string, updates: Partial<User>) => {
+    try {
+      const response = await fetch(`/api/admin/users`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, updates }),
+      });
+
+      if (!response.ok) throw new Error('Failed to update user');
+
+      // Refresh users list
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error updating user:', error);
+      alert('Failed to update user');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/users`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (!response.ok) throw new Error('Failed to delete user');
+
+      // Refresh users list
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Failed to delete user');
+    }
+  };
+
+  // Filter users based on search and filters
+  const filteredUsers = users.filter((user) => {
+    const matchesSearch =
+      user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+
+    const matchesSubscription =
+      subscriptionFilter === 'all' ||
+      (subscriptionFilter === 'active' && user.subscription?.status === 'ACTIVE') ||
+      (subscriptionFilter === 'inactive' && !user.subscription);
+
+    return matchesSearch && matchesRole && matchesSubscription;
+  });
+
+  return (
+    <div>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
+        <p className="text-gray-600 mt-2">
+          Manage users, roles, and subscriptions
+        </p>
+      </div>
+
+      {/* Filters and Search */}
+      <div className="bg-white p-4 rounded-lg border border-gray-200 mb-6">
+        <div className="flex flex-col md:flex-row gap-4">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Role Filter */}
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
+            >
+              <option value="all">All Roles</option>
+              <option value="USER">User</option>
+              <option value="ADMIN">Admin</option>
+            </select>
+          </div>
+
+          {/* Subscription Filter */}
+          <div className="relative">
+            <select
+              value={subscriptionFilter}
+              onChange={(e) => setSubscriptionFilter(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
+            >
+              <option value="all">All Subscriptions</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            Showing {filteredUsers.length} of {users.length} users
+          </p>
+        </div>
+      </div>
+
+      {/* Users Table */}
+      {loading ? (
+        <div className="bg-white p-8 rounded-lg border border-gray-200 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading users...</p>
+        </div>
+      ) : (
+        <UserTable
+          users={filteredUsers}
+          onUpdateUser={handleUpdateUser}
+          onDeleteUser={handleDeleteUser}
+        />
+      )}
+    </div>
+  );
+}

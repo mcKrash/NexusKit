@@ -1,0 +1,233 @@
+import type { PricingPlan } from '@prisma/client';
+
+/**
+ * Plan hierarchy for access control
+ */
+const PLAN_HIERARCHY: Record<PricingPlan, number> = {
+  FREE: 0,
+  PRO: 1,
+  ENTERPRISE: 2,
+};
+
+/**
+ * Check if user's plan meets the required plan level
+ */
+export function hasAccess(userPlan: PricingPlan, requiredPlan: PricingPlan): boolean {
+  return PLAN_HIERARCHY[userPlan] >= PLAN_HIERARCHY[requiredPlan];
+}
+
+/**
+ * Get plan features
+ */
+export function getPlanFeatures(plan: PricingPlan) {
+  const features: Record<PricingPlan, string[]> = {
+    FREE: [
+      'Basic features',
+      'Up to 10 projects',
+      'Community support',
+      '1 GB storage',
+    ],
+    PRO: [
+      'All Free features',
+      'Unlimited projects',
+      'Priority support',
+      '50 GB storage',
+      'Advanced analytics',
+      'Custom domain',
+    ],
+    ENTERPRISE: [
+      'All Pro features',
+      'Dedicated support',
+      'SSO & SAML',
+      'Unlimited storage',
+      'Advanced security',
+      'Custom integrations',
+      'SLA guarantee',
+    ],
+  };
+
+  return features[plan] || features.FREE;
+}
+
+/**
+ * Get plan limits
+ */
+export function getPlanLimits(plan: PricingPlan) {
+  const limits: Record<PricingPlan, {
+    maxProjects: number;
+    maxStorage: number; // in GB
+    maxTeamMembers: number;
+    maxApiCalls: number; // per month
+  }> = {
+    FREE: {
+      maxProjects: 10,
+      maxStorage: 1,
+      maxTeamMembers: 1,
+      maxApiCalls: 1000,
+    },
+    PRO: {
+      maxProjects: -1, // unlimited
+      maxStorage: 50,
+      maxTeamMembers: 10,
+      maxApiCalls: 100000,
+    },
+    ENTERPRISE: {
+      maxProjects: -1, // unlimited
+      maxStorage: -1, // unlimited
+      maxTeamMembers: -1, // unlimited
+      maxApiCalls: -1, // unlimited
+    },
+  };
+
+  return limits[plan] || limits.FREE;
+}
+
+/**
+ * Check if usage is within plan limits
+ */
+export function isWithinLimit(
+  current: number,
+  limit: number
+): boolean {
+  // -1 means unlimited
+  if (limit === -1) return true;
+  return current < limit;
+}
+
+/**
+ * Calculate usage percentage
+ */
+export function getUsagePercentage(
+  current: number,
+  limit: number
+): number {
+  if (limit === -1) return 0; // unlimited
+  return Math.min(100, Math.round((current / limit) * 100));
+}
+
+/**
+ * Check if plan upgrade is available
+ */
+export function canUpgrade(currentPlan: PricingPlan): boolean {
+  return currentPlan !== 'ENTERPRISE';
+}
+
+/**
+ * Get next available plan
+ */
+export function getNextPlan(currentPlan: PricingPlan): PricingPlan | null {
+  const plans: PricingPlan[] = ['FREE', 'PRO', 'ENTERPRISE'];
+  const currentIndex = plans.indexOf(currentPlan);
+
+  if (currentIndex === -1 || currentIndex === plans.length - 1) {
+    return null;
+  }
+
+  return plans[currentIndex + 1];
+}
+
+/**
+ * Check if subscription is active
+ */
+export function isSubscriptionActive(
+  status: string,
+  currentPeriodEnd: Date
+): boolean {
+  const activeStatuses = ['ACTIVE', 'TRIALING'];
+  const isStatusActive = activeStatuses.includes(status);
+  const isNotExpired = new Date() < new Date(currentPeriodEnd);
+
+  return isStatusActive && isNotExpired;
+}
+
+/**
+ * Check if subscription needs attention (expiring soon, past due, etc.)
+ */
+export function subscriptionNeedsAttention(
+  status: string,
+  currentPeriodEnd: Date,
+  cancelAtPeriodEnd: boolean
+): {
+  needsAttention: boolean;
+  reason?: string;
+  severity?: 'info' | 'warning' | 'error';
+} {
+  const now = new Date();
+  const daysUntilExpiration = Math.ceil(
+    (new Date(currentPeriodEnd).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  // Past due - critical
+  if (status === 'PAST_DUE') {
+    return {
+      needsAttention: true,
+      reason: 'Your payment is past due. Please update your payment method.',
+      severity: 'error',
+    };
+  }
+
+  // Canceled
+  if (status === 'CANCELED') {
+    return {
+      needsAttention: true,
+      reason: 'Your subscription has been canceled.',
+      severity: 'error',
+    };
+  }
+
+  // Set to cancel at period end
+  if (cancelAtPeriodEnd && daysUntilExpiration > 0) {
+    return {
+      needsAttention: true,
+      reason: `Your subscription will end in ${daysUntilExpiration} days.`,
+      severity: 'warning',
+    };
+  }
+
+  // Expiring soon (within 7 days)
+  if (daysUntilExpiration <= 7 && daysUntilExpiration > 0) {
+    return {
+      needsAttention: true,
+      reason: `Your subscription renews in ${daysUntilExpiration} days.`,
+      severity: 'info',
+    };
+  }
+
+  return { needsAttention: false };
+}
+
+/**
+ * Format subscription status for display
+ */
+export function formatSubscriptionStatus(status: string): string {
+  const statusMap: Record<string, string> = {
+    INCOMPLETE: 'Incomplete',
+    INCOMPLETE_EXPIRED: 'Expired',
+    TRIALING: 'Trial',
+    ACTIVE: 'Active',
+    PAST_DUE: 'Past Due',
+    CANCELED: 'Canceled',
+    UNPAID: 'Unpaid',
+    PAUSED: 'Paused',
+  };
+
+  return statusMap[status] || status;
+}
+
+/**
+ * Get status badge color
+ */
+export function getStatusBadgeColor(status: string): string {
+  const colorMap: Record<string, string> = {
+    ACTIVE: 'green',
+    TRIALING: 'blue',
+    PAST_DUE: 'orange',
+    CANCELED: 'red',
+    UNPAID: 'red',
+    PAUSED: 'gray',
+    INCOMPLETE: 'yellow',
+    INCOMPLETE_EXPIRED: 'red',
+  };
+
+  return colorMap[status] || 'gray';
+}

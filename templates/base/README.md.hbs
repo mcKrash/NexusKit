@@ -1,0 +1,330 @@
+# {{projectName}}
+
+{{#if description}}
+{{description}}
+{{else}}
+A modern, production-ready SaaS application built with Next.js 14, TypeScript, and Tailwind CSS.
+{{/if}}
+
+## Features
+
+{{#if features.authentication}}
+- 🔐 **Authentication** - Secure authentication with NextAuth.js
+  {{#if features.googleAuth}}- Google OAuth{{/if}}
+  {{#if features.githubAuth}}- GitHub OAuth{{/if}}
+  {{#if features.emailAuth}}- Email/Password authentication{{/if}}
+{{/if}}
+
+{{#if features.database}}
+- 💾 **Database** - PostgreSQL with Prisma ORM
+{{/if}}
+
+{{#if features.stripe}}
+- 💳 **Payments** - Stripe integration for subscriptions and one-time payments
+- 📊 **Subscription Management** - Multiple pricing tiers and plans
+{{/if}}
+
+{{#if features.email}}
+- 📧 **Email** - Transactional emails with {{#if features.resend}}Resend{{else if features.sendgrid}}SendGrid{{else}}SMTP{{/if}}
+{{/if}}
+
+{{#if features.dashboard}}
+- 📈 **Dashboard** - User dashboard with analytics and insights
+{{/if}}
+
+{{#if features.admin}}
+- 👥 **Admin Panel** - Comprehensive admin panel for user management
+{{/if}}
+
+{{#if features.api}}
+- 🚀 **API Routes** - RESTful API with built-in rate limiting
+{{/if}}
+
+{{#if features.storage}}
+- 📁 **File Storage** - {{#if features.aws}}AWS S3{{else if features.cloudinary}}Cloudinary{{/if}} integration for file uploads
+{{/if}}
+
+{{#if features.analytics}}
+- 📊 **Analytics** - Google Analytics and PostHog integration
+{{/if}}
+
+{{#if features.seo}}
+- 🔍 **SEO Optimized** - Meta tags, sitemap, and robots.txt
+{{/if}}
+
+{{#if features.responsive}}
+- 📱 **Responsive Design** - Mobile-first responsive design
+{{/if}}
+
+{{#if features.darkMode}}
+- 🌙 **Dark Mode** - System-aware dark mode support
+{{/if}}
+
+{{#if features.i18n}}
+- 🌍 **Internationalization** - Multi-language support
+{{/if}}
+
+## Tech Stack
+
+- **Framework:** Next.js 14 (App Router)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS{{#if features.shadcn}} + shadcn/ui{{/if}}{{#if features.daisyui}} + DaisyUI{{/if}}
+- **Database:** PostgreSQL with Prisma ORM
+- **Authentication:** NextAuth.js
+{{#if features.stripe}}- **Payments:** Stripe{{/if}}
+{{#if features.email}}- **Email:** {{#if features.resend}}Resend{{else if features.sendgrid}}SendGrid{{else}}SMTP{{/if}}{{/if}}
+{{#if features.storage}}- **Storage:** {{#if features.aws}}AWS S3{{else if features.cloudinary}}Cloudinary{{/if}}{{/if}}
+- **Deployment:** Vercel (recommended) or Docker
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- Node.js 18.x or higher
+- npm, yarn, or pnpm
+- PostgreSQL 14.x or higher
+{{#if features.redis}}- Redis (for caching and rate limiting){{/if}}
+- Git
+
+## Getting Started
+
+### 1. Clone the repository
+
+```bash
+git clone <repository-url>
+cd {{projectName}}
+```
+
+### 2. Install dependencies
+
+```bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+```
+
+### 3. Set up environment variables
+
+Copy the `.env.example` file to `.env` and fill in your environment variables:
+
+```bash
+cp .env.example .env
+```
+
+**Important:** Update the following required variables:
+
+- `DATABASE_URL` - Your PostgreSQL connection string
+- `NEXTAUTH_SECRET` - Generate with `openssl rand -base64 32`
+- `NEXTAUTH_URL` - Your application URL
+{{#if features.stripe}}- `STRIPE_SECRET_KEY` - Your Stripe secret key
+- `STRIPE_WEBHOOK_SECRET` - Your Stripe webhook secret{{/if}}
+{{#if features.email}}- Email service credentials (Resend, SendGrid, or SMTP){{/if}}
+
+### 4. Set up the database
+
+Run Prisma migrations to set up your database schema:
+
+```bash
+npx prisma generate
+npx prisma db push
+# or for production
+npx prisma migrate deploy
+```
+
+Seed the database with initial data (optional):
+
+```bash
+npx prisma db seed
+```
+
+### 5. Run the development server
+
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## Project Structure
+
+```
+{{projectName}}/
+├── src/
+│   ├── app/              # Next.js 14 App Router
+│   │   ├── (auth)/       # Authentication pages
+│   │   ├── (dashboard)/  # Dashboard pages
+│   │   ├── api/          # API routes
+│   │   └── layout.tsx    # Root layout
+│   ├── components/       # React components
+│   │   ├── ui/           # UI components
+│   │   └── ...
+│   ├── lib/              # Utility functions and configurations
+│   │   ├── auth.ts       # NextAuth configuration
+│   │   ├── db.ts         # Prisma client
+│   │   └── ...
+│   ├── types/            # TypeScript type definitions
+│   └── styles/           # Global styles
+├── prisma/
+│   ├── schema.prisma     # Database schema
+│   └── migrations/       # Database migrations
+├── public/               # Static assets
+├── .env.example          # Environment variables template
+├── next.config.js        # Next.js configuration
+├── tailwind.config.js    # Tailwind CSS configuration
+└── tsconfig.json         # TypeScript configuration
+```
+
+## Database Management
+
+### Prisma Studio
+
+View and edit your database using Prisma Studio:
+
+```bash
+npx prisma studio
+```
+
+### Migrations
+
+Create a new migration:
+
+```bash
+npx prisma migrate dev --name your_migration_name
+```
+
+Reset the database:
+
+```bash
+npx prisma migrate reset
+```
+
+## Building for Production
+
+### Build the application
+
+```bash
+npm run build
+# or
+yarn build
+# or
+pnpm build
+```
+
+### Start the production server
+
+```bash
+npm start
+# or
+yarn start
+# or
+pnpm start
+```
+
+## Deployment
+
+### Vercel (Recommended)
+
+1. Push your code to GitHub
+2. Import your repository on [Vercel](https://vercel.com)
+3. Configure environment variables
+4. Deploy
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/{{projectName}})
+
+### Docker
+
+Build and run with Docker:
+
+```bash
+docker build -t {{projectName}} .
+docker run -p 3000:3000 {{projectName}}
+```
+
+With Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+### Environment Variables in Production
+
+Make sure to set all required environment variables in your production environment:
+
+- Set `NODE_ENV=production`
+- Use strong, unique secrets for `NEXTAUTH_SECRET`
+- Update `NEXTAUTH_URL` to your production domain
+- Use production API keys for all services
+- Enable SSL/HTTPS
+
+## Testing
+
+Run tests:
+
+```bash
+npm test
+# or
+yarn test
+# or
+pnpm test
+```
+
+Run E2E tests with Playwright:
+
+```bash
+npm run test:e2e
+# or
+yarn test:e2e
+# or
+pnpm test:e2e
+```
+
+## Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm start` - Start production server
+- `npm run lint` - Run ESLint
+- `npm run lint:fix` - Fix ESLint errors
+- `npm run format` - Format code with Prettier
+- `npm run type-check` - Run TypeScript compiler check
+- `npm test` - Run tests
+- `npm run test:watch` - Run tests in watch mode
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For support, email {{supportEmail}} or join our [Discord community]({{discordUrl}}).
+
+## Acknowledgments
+
+Built with:
+- [Next.js](https://nextjs.org/)
+- [TypeScript](https://www.typescriptlang.org/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Prisma](https://www.prisma.io/)
+- [NextAuth.js](https://next-auth.js.org/)
+{{#if features.stripe}}- [Stripe](https://stripe.com/){{/if}}
+{{#if features.shadcn}}- [shadcn/ui](https://ui.shadcn.com/){{/if}}
+
+---
+
+Made with ❤️ by [Your Name](https://github.com/yourusername)
