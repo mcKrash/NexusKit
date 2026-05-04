@@ -92,6 +92,67 @@ export async function runWizard(initialProjectName) {
       message: 'Include Docker configuration?',
       default: true
     },
+    // ── Pro Features ──────────────────────────────────────────────────────────
+    {
+      type: 'confirm',
+      name: 'includeAI',
+      message: 'Add AI integration? (streaming chat, API routes)',
+      default: false
+    },
+    {
+      type: 'list',
+      name: 'aiProvider',
+      message: 'Choose AI provider:',
+      when: (answers) => answers.includeAI,
+      choices: [
+        { name: 'OpenAI (GPT-4o)', value: 'openai' },
+        { name: 'Anthropic (Claude Sonnet)', value: 'anthropic' }
+      ],
+      default: 'openai'
+    },
+    {
+      type: 'list',
+      name: 'aiTier',
+      message: 'Choose AI tier:',
+      when: (answers) => answers.includeAI,
+      choices: [
+        { name: 'Basic – Free  (streaming chat route, API setup)', value: 'basic' },
+        { name: 'Pro  – Full Layer (token tracking, rate limiting, cost analytics)', value: 'pro' }
+      ],
+      default: 'basic'
+    },
+    {
+      type: 'confirm',
+      name: 'includeTeams',
+      message: 'Include Teams & Roles? (organizations, member invites, RBAC)',
+      default: false
+    },
+    {
+      type: 'confirm',
+      name: 'includeMultiTenancy',
+      message: 'Include Multi-tenancy? (subdomain routing, tenant isolation)',
+      when: (answers) => answers.includeTeams,
+      default: false
+    },
+    {
+      type: 'confirm',
+      name: 'includeAdvancedBilling',
+      message: 'Include Advanced Billing? (usage-based metering, seats, free trials)',
+      default: false
+    },
+    {
+      type: 'confirm',
+      name: 'includeAnalytics',
+      message: 'Include Analytics Dashboard? (MRR, churn, cohort analysis)',
+      default: false
+    },
+    {
+      type: 'confirm',
+      name: 'includeOnboarding',
+      message: 'Include Onboarding Flows? (user checklists, empty states, product tours)',
+      default: false
+    },
+    // ─────────────────────────────────────────────────────────────────────────
     {
       type: 'confirm',
       name: 'skipInstall',
@@ -111,7 +172,14 @@ export async function runWizard(initialProjectName) {
     },
     features: {
       adminDashboard: answers.includeAdmin,
-      docker: answers.includeDocker
+      docker: answers.includeDocker,
+      ai: answers.includeAI ? answers.aiTier : 'none',
+      aiProvider: answers.includeAI ? answers.aiProvider : null,
+      teams: answers.includeTeams || false,
+      multiTenancy: answers.includeMultiTenancy || false,
+      advancedBilling: answers.includeAdvancedBilling || false,
+      analytics: answers.includeAnalytics || false,
+      onboarding: answers.includeOnboarding || false,
     },
     skipInstall: answers.skipInstall,
     skipGit: false

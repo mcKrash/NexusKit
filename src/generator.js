@@ -33,7 +33,18 @@ export async function generateProject(config) {
     throw error;
   }
 
-  // Step 3: Install dependencies
+  // Log Pro features included
+  const proFeatures = [];
+  if (config.features?.ai && config.features.ai !== 'none') proFeatures.push(`AI – ${config.features.ai} (${config.features.aiProvider})`);
+  if (config.features?.teams) proFeatures.push('Teams & Roles');
+  if (config.features?.multiTenancy) proFeatures.push('Multi-tenancy');
+  if (config.features?.advancedBilling) proFeatures.push('Advanced Billing');
+  if (config.features?.analytics) proFeatures.push('Analytics');
+  if (config.features?.onboarding) proFeatures.push('Onboarding');
+  if (proFeatures.length > 0) {
+    console.log(chalk.cyan(`\n  ⚡ Pro features: ${proFeatures.join(' · ')}`));
+  }
+
   // Step 3: Install dependencies
   if (!config.skipInstall) {
     spinner = ora('Installing dependencies (this may take a few minutes)...').start();
@@ -62,7 +73,7 @@ export async function generateProject(config) {
     try {
       await execa('git', ['init'], { cwd: targetDir });
       await execa('git', ['add', '.'], { cwd: targetDir });
-      await execa('git', ['commit', '-m', 'Initial commit from create-saas-app'], { cwd: targetDir });
+      await execa('git', ['commit', '-m', 'Initial commit from NexusKit'], { cwd: targetDir });
       spinner.succeed('Git repository initialized');
     } catch (error) {
       spinner.warn('Git initialization skipped');
@@ -73,46 +84,86 @@ export async function generateProject(config) {
 async function processTemplates(config, targetDir) {
   const templatesDir = path.join(__dirname, '../templates');
 
-  // Always copy base templates
+  // Base templates (always)
   await copyAndProcessDir(path.join(templatesDir, 'base'), targetDir, config);
 
-  // Copy auth templates
+  // Auth templates
   await copyAndProcessDir(
     path.join(templatesDir, 'auth', config.stack.auth),
     targetDir,
     config
   );
 
-  // Copy payment templates
+  // Payment templates
   await copyAndProcessDir(
     path.join(templatesDir, 'payments', config.stack.payments),
     targetDir,
     config
   );
 
-  // Copy database templates (when available)
-  // await copyAndProcessDir(
-  //   path.join(templatesDir, 'database', config.stack.database),
-  //   targetDir,
-  //   config
-  // );
+  // Database templates
+  await copyAndProcessDir(
+    path.join(templatesDir, 'database', config.stack.database),
+    targetDir,
+    config
+  );
 
-  // Copy admin dashboard if enabled
+  // Admin dashboard
   if (config.features?.adminDashboard) {
-    // await copyAndProcessDir(
-    //   path.join(templatesDir, 'admin'),
-    //   targetDir,
-    //   config
-    // );
+    await copyAndProcessDir(
+      path.join(templatesDir, 'admin'),
+      targetDir,
+      config
+    );
   }
 
-  // Copy Docker config if enabled
+  // Docker / deployment
   if (config.features?.docker) {
-    // await copyAndProcessDir(
-    //   path.join(templatesDir, 'deployment/docker'),
-    //   targetDir,
-    //   config
-    // );
+    await copyAndProcessDir(
+      path.join(templatesDir, 'deployment', 'docker'),
+      targetDir,
+      config
+    );
+  }
+
+  // ── Pro features ─────────────────────────────────────────────────────────
+  const proDir = path.join(templatesDir, 'pro');
+  const hasProTemplates = await fs.pathExists(proDir);
+
+  const selectedProFeatures = [
+    config.features?.ai && config.features.ai !== 'none' ? `AI (${config.features.ai})` : null,
+    config.features?.teams ? 'Teams & RBAC' : null,
+    config.features?.multiTenancy ? 'Multi-tenancy' : null,
+    config.features?.advancedBilling ? 'Advanced Billing' : null,
+    config.features?.analytics ? 'Analytics' : null,
+    config.features?.onboarding ? 'Onboarding' : null,
+  ].filter(Boolean);
+
+  if (selectedProFeatures.length > 0 && !hasProTemplates) {
+    console.log(chalk.yellow('\n  ⚡ Pro features selected — not included in the free version.'));
+    console.log(chalk.yellow(`     Skipped: ${selectedProFeatures.join(', ')}`));
+    return;
+  }
+
+  if (hasProTemplates) {
+    if (config.features?.ai && config.features.ai !== 'none') {
+      await copyAndProcessDir(path.join(proDir, 'ai', config.features.ai), targetDir, config);
+    }
+    if (config.features?.teams) {
+      await copyAndProcessDir(path.join(proDir, 'teams'), targetDir, config);
+    }
+    if (config.features?.multiTenancy) {
+      await copyAndProcessDir(path.join(proDir, 'multi-tenancy'), targetDir, config);
+    }
+    if (config.features?.advancedBilling) {
+      await copyAndProcessDir(path.join(proDir, 'billing-advanced'), targetDir, config);
+    }
+    if (config.features?.analytics) {
+      await copyAndProcessDir(path.join(proDir, 'analytics'), targetDir, config);
+    }
+    if (config.features?.onboarding) {
+      await copyAndProcessDir(path.join(proDir, 'onboarding'), targetDir, config);
+    }
   }
 }
 
@@ -132,30 +183,39 @@ async function copyAndProcessDir(sourceDir, targetDir, config) {
       await fs.ensureDir(targetPath);
       await copyAndProcessDir(sourcePath, targetPath, config);
     } else {
-      // Remove .hbs extension if present
       if (file.name.endsWith('.hbs')) {
         targetPath = targetPath.replace(/\.hbs$/, '');
       }
 
-      // Process template if it's a .hbs file
       if (file.name.endsWith('.hbs')) {
         const template = await fs.readFile(sourcePath, 'utf8');
         const compiled = Handlebars.compile(template);
         const output = compiled({
-  ...config,
-  projectName: config.projectName,
-  description: `${config.projectName} - Generated by NexusKit`,
-  features: {
-    ...config.features,
-    stripe: config.stack?.payments === 'stripe',
-    resend: config.stack?.email === 'resend',
-    sendgrid: config.stack?.email === 'sendgrid',
-    shadcn: true,
-  }
-});
+          ...config,
+          projectName: config.projectName,
+          description: `${config.projectName} - Generated by NexusKit`,
+          features: {
+            ...config.features,
+            stripe: config.stack?.payments === 'stripe',
+            paddle: config.stack?.payments === 'paddle',
+            lemonSqueezy: config.stack?.payments === 'lemon-squeezy',
+            resend: config.stack?.email === 'resend',
+            sendgrid: config.stack?.email === 'sendgrid',
+            postmark: config.stack?.email === 'postmark',
+            shadcn: true,
+            openai: config.features?.ai !== 'none' && config.features?.aiProvider === 'openai',
+            anthropic: config.features?.ai !== 'none' && config.features?.aiProvider === 'anthropic',
+            aiBasic: config.features?.ai === 'basic',
+            aiPro: config.features?.ai === 'pro',
+            teams: config.features?.teams || false,
+            multiTenancy: config.features?.multiTenancy || false,
+            advancedBilling: config.features?.advancedBilling || false,
+            analyticsEnabled: config.features?.analytics || false,
+            onboarding: config.features?.onboarding || false,
+          }
+        });
         await fs.writeFile(targetPath, output);
       } else {
-        // Just copy non-template files
         await fs.copy(sourcePath, targetPath);
       }
     }
@@ -163,7 +223,6 @@ async function copyAndProcessDir(sourceDir, targetDir, config) {
 }
 
 async function installDependencies(targetDir) {
-  // Detect package manager
   let packageManager = 'npm';
 
   try {
@@ -178,7 +237,6 @@ async function installDependencies(targetDir) {
     }
   }
 
-  // Install dependencies
   await execa(packageManager, ['install'], {
     cwd: targetDir,
     stdio: 'pipe'

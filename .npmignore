@@ -1,0 +1,9 @@
+# Pro templates are not included in the free npm package
+# Buy NexusKit Pro at nexuskit-pro.gumroad.com
+templates/pro/
+
+# Dev files
+node_modules/
+.git/
+ARCHITECTURE.md
+TEMPLATES_SUMMARY.md
