@@ -2,7 +2,7 @@
 
 > Generate production-ready SaaS applications in minutes — not weeks.
 
-[![NPM Version](https://img.shields.io/npm/v/nexuskit.svg)](https://www.npmjs.com/package/nexuskit)
+[![NPM Version](https://img.shields.io/npm/v/nexuskit-cli.svg)](https://www.npmjs.com/package/nexuskit-cli)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue.svg)](https://www.typescriptlang.org/)
@@ -15,7 +15,7 @@
 **NexusKit** is a CLI tool that scaffolds a complete, production-ready SaaS application in a single command. Stop copy-pasting boilerplate — NexusKit wires up authentication, payments, database, email, admin dashboard, security, and deployment configs so you can start shipping features on day one.
 
 ```bash
-npx nexuskit my-app
+npx nexuskit-cli my-app
 ```
 
 That's it. Your SaaS is ready.
@@ -148,16 +148,6 @@ Your app runs at `http://localhost:3000` 🎉
 
 ---
 
-## 🗺️ Roadmap
-
-- [x] Published to NPM as `nexuskit-cli`
-- [ ] SaaS landing page template
-- [ ] Lemon Squeezy full integration
-- [ ] Supabase Auth template
-- [ ] One-click Vercel deploy button
-- [ ] Plugin system for custom templates
-
----
 
 ## 🤝 Contributing
 
