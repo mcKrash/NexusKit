@@ -92,7 +92,7 @@ export async function run() {
           console.log(chalk.white('  Unlock 6 production-ready feature modules:'));
           console.log(chalk.white('  Multi-tenancy · Teams & RBAC · AI (GPT-4o + Claude)'));
           console.log(chalk.white('  Advanced billing · Analytics · Onboarding flows\n'));
-          console.log(chalk.cyan('  → nexuskit-pro.gumroad.com\n'));
+          console.log(chalk.cyan('  → nexuskit.org/pro\n'));
           console.log(chalk.dim('─'.repeat(52) + '\n'));
         }
       } catch (error) {

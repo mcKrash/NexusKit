@@ -3,7 +3,7 @@
 > Generate production-ready SaaS applications in minutes — not weeks.
 
 [![NPM Version](https://img.shields.io/npm/v/nexuskit-cli.svg)](https://www.npmjs.com/package/nexuskit-cli)
-[![Pro](https://img.shields.io/badge/Pro-$49%20one--time-f5c842.svg)](https://nexuskit-pro.gumroad.com)
+[![Pro](https://img.shields.io/badge/Pro-$49%20one--time-f5c842.svg)](https://nexuskit.org/pro)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue.svg)](https://www.typescriptlang.org/)
@@ -165,7 +165,7 @@ The free version gives you a complete production SaaS foundation. **Pro** adds s
 
 One-time payment. No subscription. All future Pro updates included.
 
-**→ [Get NexusKit Pro — $49](https://nexuskit-pro.gumroad.com)**
+**→ [Get NexusKit Pro — $49](https://nexuskit.org/pro)**
 
 ---
 
