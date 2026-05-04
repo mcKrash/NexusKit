@@ -11,7 +11,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-// Mock data - in production, this would come from your API
 const generateRevenueData = () => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const currentMonth = new Date().getMonth();

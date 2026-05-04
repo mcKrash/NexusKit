@@ -6,9 +6,6 @@ import {
   Line,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -23,17 +20,8 @@ interface AnalyticsData {
   userGrowth: Array<{ date: string; users: number }>;
   revenueByPlan: Array<{ plan: string; revenue: number; count: number }>;
   conversionFunnel: Array<{ stage: string; count: number; rate: number }>;
-  retentionMetrics: {
-    day7: number;
-    day30: number;
-    day90: number;
-  };
-  summary: {
-    totalRevenue: number;
-    avgRevenuePerUser: number;
-    conversionRate: number;
-    activeUsers: number;
-  };
+  retentionMetrics: { day7: number; day30: number; day90: number };
+  summary: { totalRevenue: number; avgRevenuePerUser: number; conversionRate: number; activeUsers: number };
 }
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
@@ -43,17 +31,14 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, [timeRange]);
+  useEffect(() => { fetchAnalytics(); }, [timeRange]);
 
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
       const response = await fetch(`/api/admin/stats?timeRange=${timeRange}`);
       if (!response.ok) throw new Error('Failed to fetch analytics');
-      const data = await response.json();
-      setAnalyticsData(data);
+      setAnalyticsData(await response.json());
     } catch (error) {
       console.error('Error fetching analytics:', error);
     } finally {
@@ -61,42 +46,32 @@ export default function AnalyticsPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+    </div>
+  );
 
-  if (!analyticsData) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-gray-600">Failed to load analytics data</p>
-      </div>
-    );
-  }
+  if (!analyticsData) return (
+    <div className="text-center py-12">
+      <p className="text-gray-600">Failed to load analytics data</p>
+    </div>
+  );
 
   return (
     <div>
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Analytics</h1>
-          <p className="text-gray-600 mt-2">
-            Deep insights into user behavior and revenue metrics
-          </p>
+          <p className="text-gray-600 mt-2">Deep insights into user behavior and revenue metrics</p>
         </div>
-
-        {/* Time Range Selector */}
         <div className="flex gap-2">
           {(['7d', '30d', '90d', '1y'] as const).map((range) => (
             <button
               key={range}
               onClick={() => setTimeRange(range)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                timeRange === range
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                timeRange === range ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
               }`}
             >
               {range === '7d' && 'Last 7 days'}
@@ -108,39 +83,13 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Summary Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <MetricCard
-          title="Total Revenue"
-          value={`$${analyticsData.summary.totalRevenue.toLocaleString()}`}
-          icon={DollarSign}
-          trend="+12.5%"
-          trendUp={true}
-        />
-        <MetricCard
-          title="Active Users"
-          value={analyticsData.summary.activeUsers.toLocaleString()}
-          icon={Users}
-          trend="+8.2%"
-          trendUp={true}
-        />
-        <MetricCard
-          title="Avg Revenue Per User"
-          value={`$${analyticsData.summary.avgRevenuePerUser.toFixed(2)}`}
-          icon={TrendingUp}
-          trend="+3.1%"
-          trendUp={true}
-        />
-        <MetricCard
-          title="Conversion Rate"
-          value={`${analyticsData.summary.conversionRate.toFixed(1)}%`}
-          icon={Target}
-          trend="+1.5%"
-          trendUp={true}
-        />
+        <MetricCard title="Total Revenue" value={`$${analyticsData.summary.totalRevenue.toLocaleString()}`} icon={DollarSign} trend="+12.5%" trendUp={true} />
+        <MetricCard title="Active Users" value={analyticsData.summary.activeUsers.toLocaleString()} icon={Users} trend="+8.2%" trendUp={true} />
+        <MetricCard title="Avg Revenue Per User" value={`$${analyticsData.summary.avgRevenuePerUser.toFixed(2)}`} icon={TrendingUp} trend="+3.1%" trendUp={true} />
+        <MetricCard title="Conversion Rate" value={`${analyticsData.summary.conversionRate.toFixed(1)}%`} icon={Target} trend="+1.5%" trendUp={true} />
       </div>
 
-      {/* User Growth Chart */}
       <div className="bg-white p-6 rounded-lg border border-gray-200 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">User Growth</h2>
         <ResponsiveContainer width="100%" height={300}>
@@ -150,23 +99,14 @@ export default function AnalyticsPage() {
             <YAxis />
             <Tooltip />
             <Legend />
-            <Line
-              type="monotone"
-              dataKey="users"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              dot={{ fill: '#3b82f6' }}
-            />
+            <Line type="monotone" dataKey="users" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6' }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Revenue by Plan */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Revenue by Plan
-          </h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Revenue by Plan</h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={analyticsData.revenueByPlan}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -181,10 +121,7 @@ export default function AnalyticsPage() {
             {analyticsData.revenueByPlan.map((item, index) => (
               <div key={item.plan} className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded"
-                    style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                  />
+                  <div className="w-3 h-3 rounded" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                   <span className="text-gray-700">{item.plan}</span>
                 </div>
                 <div className="text-right">
@@ -196,32 +133,20 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Conversion Funnel */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Conversion Funnel
-          </h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Conversion Funnel</h2>
           <div className="space-y-4">
-            {analyticsData.conversionFunnel.map((stage, index) => (
+            {analyticsData.conversionFunnel.map((stage) => (
               <div key={stage.stage}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">
-                    {stage.stage}
-                  </span>
+                  <span className="text-sm font-medium text-gray-700">{stage.stage}</span>
                   <div className="text-right">
-                    <span className="text-sm font-medium text-gray-900">
-                      {stage.count.toLocaleString()}
-                    </span>
-                    <span className="text-xs text-gray-500 ml-2">
-                      ({stage.rate.toFixed(1)}%)
-                    </span>
+                    <span className="text-sm font-medium text-gray-900">{stage.count.toLocaleString()}</span>
+                    <span className="text-xs text-gray-500 ml-2">({stage.rate.toFixed(1)}%)</span>
                   </div>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3">
-                  <div
-                    className="bg-blue-600 h-3 rounded-full transition-all"
-                    style={{ width: `${stage.rate}%` }}
-                  />
+                  <div className="bg-blue-600 h-3 rounded-full transition-all" style={{ width: `${stage.rate}%` }} />
                 </div>
               </div>
             ))}
@@ -229,28 +154,19 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Retention Metrics */}
       <div className="bg-white p-6 rounded-lg border border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Retention Metrics
-        </h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Retention Metrics</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="text-center">
-            <div className="text-4xl font-bold text-blue-600 mb-2">
-              {analyticsData.retentionMetrics.day7.toFixed(1)}%
-            </div>
+            <div className="text-4xl font-bold text-blue-600 mb-2">{analyticsData.retentionMetrics.day7.toFixed(1)}%</div>
             <div className="text-sm text-gray-600">7-Day Retention</div>
           </div>
           <div className="text-center">
-            <div className="text-4xl font-bold text-purple-600 mb-2">
-              {analyticsData.retentionMetrics.day30.toFixed(1)}%
-            </div>
+            <div className="text-4xl font-bold text-purple-600 mb-2">{analyticsData.retentionMetrics.day30.toFixed(1)}%</div>
             <div className="text-sm text-gray-600">30-Day Retention</div>
           </div>
           <div className="text-center">
-            <div className="text-4xl font-bold text-pink-600 mb-2">
-              {analyticsData.retentionMetrics.day90.toFixed(1)}%
-            </div>
+            <div className="text-4xl font-bold text-pink-600 mb-2">{analyticsData.retentionMetrics.day90.toFixed(1)}%</div>
             <div className="text-sm text-gray-600">90-Day Retention</div>
           </div>
         </div>
