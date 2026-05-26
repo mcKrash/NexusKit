@@ -88,7 +88,7 @@ export async function run() {
         const hasProTemplates = existsSync(join(__dirname, '../templates/pro'));
         if (!hasProTemplates) {
           console.log(chalk.dim('─'.repeat(52)));
-          console.log(chalk.bold.yellow('\n  ⚡ NexusKit Pro — $49 one-time\n'));
+          console.log(chalk.bold.yellow('\n  ⚡ NexusKit Pro — $99 one-time\n'));
           console.log(chalk.white('  Unlock 6 production-ready feature modules:'));
           console.log(chalk.white('  Multi-tenancy · Teams & RBAC · AI (GPT-4o + Claude)'));
           console.log(chalk.white('  Advanced billing · Analytics · Onboarding flows\n'));
